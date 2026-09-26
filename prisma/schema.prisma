@@ -1,0 +1,189 @@
+// Prisma schema for JK Shop
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // Supabase Postgres connection string goes in .env
+  url      = env("DATABASE_URL")
+}
+
+enum CategoryGroup {
+  main
+  others
+}
+
+enum ItemStatus {
+  available
+  sold_out
+}
+
+enum OrderStatus {
+  pending
+  in_progress
+  done
+}
+
+enum AdminRole {
+  staff
+  super_admin
+}
+
+enum FieldType {
+  text
+  number
+  file
+  dropdown
+}
+
+model Game {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  iconUrl     String?
+  description String?
+  isActive    Boolean    @default(true)
+  categories  Category[]
+  orders      Order[]
+  createdAt   DateTime   @default(now())
+}
+
+model Category {
+  id         String        @id @default(cuid())
+  game       Game          @relation(fields: [gameId], references: [id])
+  gameId     String
+  name       String
+  group      CategoryGroup @default(main)
+  sortOrder  Int           @default(0)
+  isActive   Boolean       @default(true)
+  fields     FormField[]
+  items      PricelistItem[]
+  events     Event[]
+  orders     Order[]
+}
+
+model FormField {
+  id          String     @id @default(cuid())
+  category    Category   @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  label       String
+  fieldType   FieldType  @default(text)
+  helperText  String?
+  isRequired  Boolean    @default(true)
+  sortOrder   Int        @default(0)
+}
+
+model PricelistItem {
+  id            String     @id @default(cuid())
+  category      Category   @relation(fields: [categoryId], references: [id])
+  categoryId    String
+  name          String
+  price         Decimal
+  originalPrice Decimal?
+  status        ItemStatus @default(available)
+  notes         String?
+  sortOrder     Int        @default(0)
+  orders        Order[]
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  category    Category  @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  name        String
+  imageUrl    String?
+  basePrice   Decimal
+  startDate   DateTime
+  endDate     DateTime
+  heroes      EventHero[]
+  schedule    EventSchedule[]
+  orders      Order[]
+}
+
+model EventHero {
+  id        String  @id @default(cuid())
+  event     Event   @relation(fields: [eventId], references: [id])
+  eventId   String
+  heroName  String
+  imageUrl  String?
+  price     Decimal
+}
+
+model EventSchedule {
+  id         String   @id @default(cuid())
+  event      Event    @relation(fields: [eventId], references: [id])
+  eventId    String
+  phaseName  String   // "1st week", "Phase 1", "Last Day"
+  startDate  DateTime
+  endDate    DateTime
+  price      Decimal
+}
+
+model PaymentMethod {
+  id            String   @id @default(cuid())
+  name          String   // GCash, Maribank, MAYA, UNO
+  accountName   String
+  accountNumber String
+  qrImageUrl    String?
+  isActive      Boolean  @default(true)
+  orders        Order[]
+}
+
+model Admin {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  passwordHash  String
+  role          AdminRole @default(staff)
+  createdAt     DateTime @default(now())
+  statusChanges OrderStatusHistory[]
+  notes         OrderNote[]
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  game            Game          @relation(fields: [gameId], references: [id])
+  gameId          String
+  category        Category      @relation(fields: [categoryId], references: [id])
+  categoryId      String
+  item            PricelistItem? @relation(fields: [itemId], references: [id])
+  itemId          String?
+  event           Event?        @relation(fields: [eventId], references: [id])
+  eventId         String?
+  accountFields   Json          // { userId, serverId, ign } etc. — flexible per game
+  quantity        Int           @default(1)
+  unitPrice       Decimal
+  totalPrice      Decimal
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId String
+  proofOfPaymentUrl String?
+  facebookName    String?
+  email           String?
+  status          OrderStatus   @default(pending)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  statusHistory   OrderStatusHistory[]
+  internalNotes   OrderNote[]
+}
+
+model OrderStatusHistory {
+  id         String      @id @default(cuid())
+  order      Order       @relation(fields: [orderId], references: [id])
+  orderId    String
+  oldStatus  OrderStatus?
+  newStatus  OrderStatus
+  changedBy  Admin?      @relation(fields: [adminId], references: [id])
+  adminId    String?
+  changedAt  DateTime    @default(now())
+}
+
+model OrderNote {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  admin     Admin    @relation(fields: [adminId], references: [id])
+  adminId   String
+  noteText  String
+  createdAt DateTime @default(now())
+}
