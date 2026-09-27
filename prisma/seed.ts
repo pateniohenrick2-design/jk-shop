@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
-type Item = { name: string; price: number; status?: 'available' | 'sold_out'; notes?: string };
+type Item = { name: string; price: number; originalPrice?: number; status?: 'available' | 'sold_out'; notes?: string };
 type Field = { label: string; helperText?: string };
 type Category = { name: string; group: 'main' | 'others'; fields?: Field[]; items?: Item[] };
 type GameDef = { name: string; slug: string; description?: string; categories: Category[] };
@@ -20,9 +21,31 @@ const games: GameDef[] = [
     slug: 'mlbb',
     description: 'Diamonds | Items | Skins | Others',
     categories: [
-      { name: 'Diamonds', group: 'main', fields: MLBB_FIELDS, items: [] },
-      { name: 'Pre-Order Event', group: 'main', fields: [{ label: 'Event' }, ...MLBB_FIELDS], items: [] },
-      { name: 'Event Skin Gifting', group: 'main', fields: MLBB_FIELDS, items: [] }, // pricing lives in Events
+      {
+        name: 'Diamonds', group: 'main', fields: MLBB_FIELDS,
+        items: [
+          { name: 'Weekly Diamond Pass', price: 114 },
+          { name: '11 Diamonds', price: 12 }, { name: '22 Diamonds', price: 23 },
+          { name: '56 Diamonds', price: 55 }, { name: '112 Diamonds', price: 110 },
+          { name: '168 Diamonds', price: 164 }, { name: '223 Diamonds', price: 219 },
+          { name: '279 Diamonds', price: 273 }, { name: '301 Diamonds', price: 296 },
+          { name: '336 Diamonds', price: 332 },
+        ],
+      },
+      {
+        name: 'Pre-Order Event', group: 'main', fields: [{ label: 'Event' }, ...MLBB_FIELDS],
+        items: [
+          { name: 'Weekly Diamond Pass', price: 112, originalPrice: 114, notes: 'Pre-order deal — ends soon' },
+          { name: '279 Diamonds', price: 271, originalPrice: 273, notes: 'Pre-order deal — ends soon' },
+          { name: '301 Diamonds', price: 293, originalPrice: 296, notes: 'Pre-order deal — ends soon' },
+          { name: '336 Diamonds', price: 329, originalPrice: 332, notes: 'Pre-order deal — ends soon' },
+          { name: '570 Diamonds', price: 542, originalPrice: 547, notes: 'Pre-order deal — ends soon' },
+          { name: '1163 Diamonds', price: 1089, originalPrice: 1099, notes: 'Pre-order deal — ends soon' },
+          { name: '2398 Diamonds', price: 2154, originalPrice: 2174, notes: 'Pre-order deal — ends soon' },
+          { name: '6042 Diamonds', price: 5397, originalPrice: 5447, notes: 'Pre-order deal — ends soon' },
+        ],
+      },
+      { name: 'Event Skin Gifting', group: 'main', fields: MLBB_FIELDS, items: [] },
       {
         name: 'Shop Items', group: 'main', fields: MLBB_FIELDS,
         items: [
@@ -31,7 +54,19 @@ const games: GameDef[] = [
           { name: 'Rename Card', price: 142 }, { name: 'Emote', price: 74 }, { name: 'Emote (Alt)', price: 54 },
         ],
       },
-      { name: 'Shop Skins', group: 'main', fields: MLBB_FIELDS, items: [] },
+      {
+        name: 'Shop Skins', group: 'main', fields: MLBB_FIELDS,
+        items: [
+          { name: 'Epic (1089💎)', price: 544 },
+          { name: 'Epic (899💎)', price: 439 },
+          { name: 'Special (749💎)', price: 374 },
+          { name: 'Elite (599💎)', price: 294 },
+          { name: 'Elite (399💎)', price: 214 },
+          { name: 'Normal (299💎)', price: 169 },
+          { name: 'Normal (269💎)', price: 154 },
+          { name: 'Painted (188💎)', price: 109 },
+        ],
+      },
       { name: 'Callback Form', group: 'others', fields: [{ label: 'Invitation Code' }, { label: 'Enter IGN' }], items: [] },
       {
         name: 'ML Top Fan Border', group: 'others', fields: MLBB_FIELDS,
@@ -140,7 +175,7 @@ const games: GameDef[] = [
   ]},
   { name: 'Call of Duty Mobile', slug: 'cod-mobile', categories: [
     { name: 'Order', group: 'main', fields: [{ label: 'Enter UID' }], items: [] },
-]},
+  ]},
 ];
 
 const paymentMethods = [
@@ -195,7 +230,10 @@ async function main() {
       }
       for (const [i, it] of (c.items ?? []).entries()) {
         await prisma.pricelistItem.create({
-          data: { categoryId: cat.id, name: it.name, price: it.price, status: it.status ?? 'available', notes: it.notes, sortOrder: i },
+          data: {
+            categoryId: cat.id, name: it.name, price: it.price, originalPrice: it.originalPrice ?? null,
+            status: it.status ?? 'available', notes: it.notes, sortOrder: i,
+          },
         });
       }
     }
@@ -219,7 +257,15 @@ async function main() {
   console.log('Inserting payment methods...');
   for (const p of paymentMethods) await prisma.paymentMethod.create({ data: p });
 
-  console.log('Seed complete ✅ — all 8 games, categories, pricelists, events, and payment methods inserted.');
+  console.log('Ensuring default admin account...');
+  const defaultPasswordHash = await bcrypt.hash('changeme123', 10);
+  await prisma.admin.upsert({
+    where: { username: 'admin' },
+    update: {},
+    create: { username: 'admin', passwordHash: defaultPasswordHash, role: 'super_admin' },
+  });
+
+  console.log('Seed complete ✅ — all 8 games, categories, pricelists, events, payment methods, and default admin inserted.');
 }
 
 main().finally(() => prisma.$disconnect());
