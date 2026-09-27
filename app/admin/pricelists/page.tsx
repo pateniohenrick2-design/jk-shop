@@ -9,6 +9,7 @@ export default async function AdminPricelistsPage() {
       id: true,
       name: true,
       slug: true,
+      sortOrder: true,
       categories: {
         orderBy: { sortOrder: 'asc' },
         select: {
@@ -20,13 +21,14 @@ export default async function AdminPricelistsPage() {
         },
       },
     },
-    orderBy: { name: 'asc' },
+    orderBy: { sortOrder: 'asc' },
   });
 
   const serialized = games.map((g) => ({
     id: g.id,
     name: g.name,
     slug: g.slug,
+    sortOrder: g.sortOrder,
     categories: g.categories.map((c) => ({
       id: c.id,
       name: c.name,

@@ -44,6 +44,7 @@ model Game {
   slug        String     @unique
   iconUrl     String?
   description String?
+  sortOrder   Int        @default(0)
   isActive    Boolean    @default(true)
   categories  Category[]
   orders      Order[]

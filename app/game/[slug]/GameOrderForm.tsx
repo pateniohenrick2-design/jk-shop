@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/compressImage';
 
 type Item = { id: string; name: string; price: number; status: string };
 type Field = { id: string; label: string; helperText?: string | null };
@@ -132,17 +132,35 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
     try {
       let proofPath: string | null = null;
       if (proofFile) {
-        const ext = proofFile.name.split('.').pop();
-        const path = `${game.slug}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from('proof-of-payments')
-          .upload(path, proofFile);
-        if (uploadError) {
+        try {
+          const compressed = await compressImage(proofFile);
+
+          const uploadForm = new FormData();
+          uploadForm.append('file', compressed);
+          uploadForm.append('folder', game.slug);
+
+          const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: uploadForm,
+          });
+
+          if (!uploadRes.ok) {
+            const errData = await uploadRes.json().catch(() => ({}));
+            setResult({
+              ok: false,
+              msg: errData.error || 'Failed to upload proof of payment. Please try again.',
+            });
+            setSubmitting(false);
+            return;
+          }
+
+          const uploadData = await uploadRes.json();
+          proofPath = uploadData.url; // full public R2 URL, stored directly
+        } catch (uploadErr) {
           setResult({ ok: false, msg: 'Failed to upload proof of payment. Please try again.' });
           setSubmitting(false);
           return;
         }
-        proofPath = path;
       }
 
       const res = await fetch('/api/orders', {
