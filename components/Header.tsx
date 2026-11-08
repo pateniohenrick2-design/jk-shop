@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import HeaderAuth from './HeaderAuth';
 
 export default function Header() {
   return (
@@ -7,8 +8,9 @@ export default function Header() {
         <span className="brand-logo">JK</span> JK SHOP
       </Link>
       <div className="nav">
-        <Link href="/">HOME</Link>
-        <Link href="/track-order" className="muted">TRACK ORDER</Link>
+        <Link href="/" className="nav-home">HOME</Link>
+        <Link href="/my-orders" className="muted">MY ORDERS</Link>
+        <HeaderAuth />
       </div>
     </div>
   );

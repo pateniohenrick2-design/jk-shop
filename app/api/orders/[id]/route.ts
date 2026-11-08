@@ -10,7 +10,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { status } = await req.json();
-  if (!['pending', 'in_progress', 'done'].includes(status)) {
+  if (!['pending', 'in_progress', 'successful', 'refund', 'failed'].includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 

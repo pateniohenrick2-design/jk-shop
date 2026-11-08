@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest) {
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
     return NextResponse.json({ error: 'No orders selected' }, { status: 400 });
   }
-  if (!['pending', 'in_progress', 'done'].includes(status)) {
+  if (!['pending', 'in_progress', 'successful', 'refund', 'failed'].includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 

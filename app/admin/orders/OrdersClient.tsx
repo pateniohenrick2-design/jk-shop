@@ -6,6 +6,7 @@ type FieldValue = { label: string; value: string };
 type Note = { id: string; text: string; admin: string; createdAt: string };
 type OrderRow = {
   id: string;
+  orderCode: string | null;
   gameId: string;
   gameName: string;
   categoryName: string;
@@ -19,7 +20,7 @@ type OrderRow = {
   proofOfPaymentUrl: string | null;
   facebookName: string | null;
   email: string | null;
-  status: 'pending' | 'in_progress' | 'done';
+ status: 'pending' | 'in_progress' | 'successful' | 'refund' | 'failed';
   createdAt: string;
   notes: Note[];
 };
@@ -27,7 +28,9 @@ type OrderRow = {
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
-  done: 'Done',
+  successful: 'Successful',
+  refund: 'Refund',
+  failed: 'Failed',
 };
 
 function shortId(id: string) {
@@ -58,7 +61,7 @@ export default function OrdersClient({
       if (statusFilter !== 'all' && o.status !== statusFilter) return false;
       if (!q) return true;
       const haystack = [
-        shortId(o.id),
+        (o.orderCode ?? shortId(o.id)),
         o.facebookName ?? '',
         o.email ?? '',
         ...o.accountFields.map((f) => f.value),
@@ -157,7 +160,7 @@ export default function OrdersClient({
   function exportCSV() {
     const header = ['Order', 'Game', 'Category', 'Customer Fields', 'Amount', 'Status', 'Date'];
     const rows = filtered.map((o) => [
-      shortId(o.id),
+      (o.orderCode ?? shortId(o.id)),
       o.gameName,
       o.itemName ?? o.eventName ?? o.categoryName,
       o.accountFields.map((f) => `${f.label}: ${f.value}`).join(' | '),
@@ -194,14 +197,10 @@ export default function OrdersClient({
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
-            <option value="done">Done</option>
+            <option value="successful">Successful</option>
+            <option value="refund">Refund</option>
+            <option value="failed">Failed</option>
           </select>
-          <button className="qty-btn orders-bulk-btn" disabled={selected.size === 0} onClick={() => bulkUpdate('in_progress')}>
-            Mark selected: In Progress
-          </button>
-          <button className="qty-btn orders-bulk-btn" disabled={selected.size === 0} onClick={() => bulkUpdate('done')}>
-            Mark selected: Done
-          </button>
           <button className="qty-btn orders-bulk-btn" onClick={exportCSV}>Export CSV</button>
         </div>
 
@@ -231,7 +230,7 @@ export default function OrdersClient({
                 <>
                   <tr key={o.id}>
                     <td><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleSelected(o.id)} /></td>
-                    <td>{shortId(o.id)}</td>
+                    <td>{(o.orderCode ?? shortId(o.id))}</td>
                     <td>{o.gameName}</td>
                     <td>{o.itemName ?? o.eventName ?? o.categoryName}</td>
                     <td>{primaryField}</td>
@@ -252,7 +251,9 @@ export default function OrdersClient({
                       >
                         <option value="pending">Pending</option>
                         <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
+                        <option value="successful">Successful</option>
+                        <option value="refund">Refund</option>
+                        <option value="failed">Failed</option>
                       </select>
                       <button className="qty-btn orders-expand-btn" onClick={() => setExpandedId(isExpanded ? null : o.id)}>
                         {isExpanded ? 'Hide' : 'Details'}
@@ -296,7 +297,11 @@ export default function OrdersClient({
                                 onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [o.id]: e.target.value }))}
                                 onKeyDown={(e) => { if (e.key === 'Enter') addNote(o.id); }}
                               />
-                              <button className="qty-btn" onClick={() => addNote(o.id)}>Add</button>
+                              <button className="note-add-btn" aria-label="Add note" onClick={() => addNote(o.id)}>
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M3 20L21 12L3 4V10L15 12L3 14V20Z" fill="currentColor" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
                         </div>

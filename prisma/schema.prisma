@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql" // Supabase Postgres connection string goes in .env
-  url      = env("DATABASE_URL")
+  provider  = "postgresql" // Supabase Postgres connection string goes in .env
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum CategoryGroup {
@@ -24,6 +25,9 @@ enum OrderStatus {
   pending
   in_progress
   done
+  successful
+  refund
+  failed
 }
 
 enum AdminRole {
@@ -59,6 +63,7 @@ model Category {
   group      CategoryGroup @default(main)
   sortOrder  Int           @default(0)
   isActive   Boolean       @default(true)
+  code       String?       @unique // short prefix for order IDs, e.g. "DIA" → DIA-1108001
   fields     FormField[]
   items      PricelistItem[]
   events     Event[]
@@ -110,13 +115,16 @@ model EventHero {
   heroName  String
   imageUrl  String?
   price     Decimal
+  schedule  EventSchedule[]
 }
 
 model EventSchedule {
-  id         String   @id @default(cuid())
-  event      Event    @relation(fields: [eventId], references: [id])
+  id         String    @id @default(cuid())
+  event      Event     @relation(fields: [eventId], references: [id])
   eventId    String
-  phaseName  String   // "1st week", "Phase 1", "Last Day"
+  hero       EventHero @relation(fields: [heroId], references: [id])
+  heroId     String
+  phaseName  String    // "1st week", "Phase 1", "Last Day"
   startDate  DateTime
   endDate    DateTime
   price      Decimal
@@ -128,6 +136,7 @@ model PaymentMethod {
   accountName   String
   accountNumber String
   qrImageUrl    String?
+  logoUrl       String?  // R2 key of an uploaded logo; falls back to /public/payments/logos/<name>.png
   isActive      Boolean  @default(true)
   orders        Order[]
 }
@@ -144,6 +153,7 @@ model Admin {
 
 model Order {
   id              String        @id @default(cuid())
+  orderCode       String?       // human-readable ID: category code + MMDD + daily count, e.g. "DIA-1108001"
   game            Game          @relation(fields: [gameId], references: [id])
   gameId          String
   category        Category      @relation(fields: [categoryId], references: [id])
@@ -161,11 +171,15 @@ model Order {
   proofOfPaymentUrl String?
   facebookName    String?
   email           String?
+  customerId      String?       // Supabase Auth user id when the customer was logged in
   status          OrderStatus   @default(pending)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   statusHistory   OrderStatusHistory[]
   internalNotes   OrderNote[]
+
+  @@index([orderCode])
+  @@index([customerId])
 }
 
 model OrderStatusHistory {
@@ -187,4 +201,11 @@ model OrderNote {
   adminId   String
   noteText  String
   createdAt DateTime @default(now())
+}
+
+// Daily order counter per category, used to build order codes like DIA-1108001.
+// key = "<categoryCode>-<YYYY-MM-DD>" (Philippine date).
+model OrderCounter {
+  key String @id
+  seq Int    @default(0)
 }

@@ -25,6 +25,7 @@ export default async function AdminOrdersPage() {
 
   const serialized = orders.map((o) => ({
     id: o.id,
+    orderCode: o.orderCode,
     gameId: o.gameId,
     gameName: o.game.name,
     categoryName: o.category.name,
@@ -41,7 +42,7 @@ export default async function AdminOrdersPage() {
     proofOfPaymentUrl: o.proofOfPaymentUrl,
     facebookName: o.facebookName,
     email: o.email,
-    status: o.status,
+   status: o.status as 'pending' | 'in_progress' | 'successful' | 'refund' | 'failed',
     createdAt: o.createdAt.toISOString(),
     notes: o.internalNotes.map((n) => ({
       id: n.id,

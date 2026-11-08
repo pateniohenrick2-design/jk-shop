@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getFromR2 } from '@/lib/r2';
 
-// Streams a file from R2 through our own domain, so the browser never
-// has to resolve/contact the .r2.dev domain directly (some ISPs block it).
+// Streams a file from R2 through our own domain. It reads via the S3 API
+// endpoint, not the public .r2.dev URL, because some ISPs block .r2.dev
+// (for the browser *and* for this server when it runs on such a network).
 //
 // Usage: /api/image-proxy?key=mlbb/xxxxx.jpg
 export async function GET(req: NextRequest) {
@@ -11,31 +13,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing key' }, { status: 400 });
   }
 
-  // Basic safety: only allow keys, not full URLs, to prevent this becoming
-  // an open proxy for arbitrary sites.
+  // Only accept bucket keys, never full URLs.
   if (key.startsWith('http://') || key.startsWith('https://')) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 });
   }
 
-  const r2Url = `${process.env.R2_PUBLIC_URL}/${key}`;
-
   try {
-    const upstream = await fetch(r2Url);
-
-    if (!upstream.ok || !upstream.body) {
+    const { body, contentType } = await getFromR2(key);
+    if (!body) {
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    const contentType = upstream.headers.get('content-type') || 'image/jpeg';
-
-    return new NextResponse(upstream.body, {
+    return new NextResponse(body.transformToWebStream() as ReadableStream, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': contentType || 'image/jpeg',
         'Cache-Control': 'public, max-age=86400', // cache 1 day in the browser
       },
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === 'NoSuchKey') {
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+    }
     console.error('Image proxy failed:', err);
     return NextResponse.json({ error: 'Failed to load image' }, { status: 500 });
   }

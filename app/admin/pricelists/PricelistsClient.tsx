@@ -17,6 +17,8 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import BulkPasteModal from "./BulkPasteModal";
+import EventCategoryPanel, { type EventInfo } from "./EventCategoryPanel";
 
 type Item = {
   id: string;
@@ -34,6 +36,7 @@ type Category = {
   group: "main" | "others";
   sortOrder: number;
   items: Item[];
+  events?: EventInfo[];
 };
 
 type Game = {
@@ -93,6 +96,9 @@ export default function PricelistsClient({
     useState<ItemDraft>(EMPTY_ITEM_DRAFT);
 
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [itemQuery, setItemQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     message: string;
@@ -106,9 +112,20 @@ export default function PricelistsClient({
   const selectedGame = games.find((g) => g.id === selectedGameId);
   const categories = selectedGame?.categories ?? [];
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const soldOutCount = selectedCategory?.items.filter((it) => it.status === "sold_out").length ?? 0;
+  // Event categories (e.g. Event Skin Gifting) show their events from the Events page instead of items
+  const isEventCategory =
+    !!selectedCategory &&
+    selectedCategory.items.length === 0 &&
+    ((selectedCategory.events?.length ?? 0) > 0 || /event skin gifting/i.test(selectedCategory.name));
+  const q = itemQuery.trim().toLowerCase();
+  const visibleItems = (selectedCategory?.items ?? []).filter(
+    (it) => !q || it.name.toLowerCase().includes(q) || (it.notes ?? "").toLowerCase().includes(q),
+  );
 
   function selectGame(id: string) {
     setSelectedGameId(id);
+    setItemQuery("");
     const g = games.find((x) => x.id === id);
     setSelectedCategoryId(g?.categories[0]?.id ?? "");
     setAddingCategory(false);
@@ -120,6 +137,7 @@ export default function PricelistsClient({
 
   function selectCategory(id: string) {
     setSelectedCategoryId(id);
+    setItemQuery("");
     setAddingItem(false);
     setEditingItemId(null);
     setError(null);
@@ -559,6 +577,11 @@ export default function PricelistsClient({
           {error}
         </div>
       )}
+      {notice && (
+        <div className="bulk-notice" onClick={() => setNotice(null)}>
+          ✓ {notice}
+        </div>
+      )}
 
       <div className="panel">
         <DndContext
@@ -742,139 +765,159 @@ export default function PricelistsClient({
           </div>
 
           {/* Item table — drag to reorder */}
-          <div>
-            <div className="panel-head">
-              <h2>
-                {selectedCategory
-                  ? `Items — ${selectedCategory.name}`
-                  : "Select a category"}
-              </h2>
-            </div>
-
-            {selectedCategory && (
+          <div className="pl-items">
+            {!selectedCategory ? (
+              <div className="pl-empty">Select a category on the left to manage its items.</div>
+            ) : isEventCategory ? (
+              <EventCategoryPanel categoryName={selectedCategory.name} events={selectedCategory.events ?? []} />
+            ) : (
               <>
-                {!addingItem ? (
-                  <button
-                    className="qty-btn"
-                    style={{
-                      marginBottom: 12,
-                      width: "auto",
-                      padding: "10px 16px",
-                      whiteSpace: "nowrap",
-                    }}
-                    onClick={() => setAddingItem(true)}
-                  >
-                    + Add Item
-                  </button>
-                ) : (
-                  <div className="order-expand" style={{ marginBottom: 12 }}>
-                    <div
-                      className="order-expand-col"
-                      style={{ flex: "1 1 100%" }}
-                    >
+                <div className="pl-toolbar">
+                  <div className="pl-title">
+                    <h2>{selectedCategory.name}</h2>
+                    <span>
+                      {selectedCategory.items.length} item{selectedCategory.items.length === 1 ? "" : "s"}
+                      {soldOutCount > 0 && ` · ${soldOutCount} sold out`}
+                    </span>
+                  </div>
+                  <div className="pl-actions">
+                    {selectedCategory.items.length > 0 && (
                       <input
-                        className="field-input"
-                        placeholder="Item name"
-                        value={itemDraft.name}
-                        onChange={(e) =>
-                          setItemDraft((d) => ({ ...d, name: e.target.value }))
-                        }
+                        className="pl-search"
+                        type="search"
+                        placeholder="Search items…"
+                        value={itemQuery}
+                        onChange={(e) => setItemQuery(e.target.value)}
                       />
-                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    )}
+                    <button
+                      className="pl-btn"
+                      onClick={() => { setNotice(null); setBulkOpen(true); }}
+                      title="Paste rows from Google Sheets to add or update many items at once"
+                    >
+                      Bulk Paste
+                    </button>
+                    <button
+                      className="pl-btn pl-btn-primary"
+                      disabled={addingItem}
+                      onClick={() => setAddingItem(true)}
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+                </div>
+
+                {addingItem && (
+                  <div className="pl-add-card">
+                    <div className="pl-add-grid">
+                      <div className="pl-add-name">
+                        <label className="field-label">Item Name</label>
                         <input
                           className="field-input"
-                          placeholder="Price"
-                          type="number"
-                          value={itemDraft.price}
-                          onChange={(e) =>
-                            setItemDraft((d) => ({
-                              ...d,
-                              price: e.target.value,
-                            }))
-                          }
+                          placeholder="e.g. 56 Diamonds"
+                          autoFocus
+                          value={itemDraft.name}
+                          onChange={(e) => setItemDraft((d) => ({ ...d, name: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === "Enter") submitAddItem(); }}
                         />
-                        <input
-                          className="field-input"
-                          placeholder="Original price (optional)"
-                          type="number"
-                          value={itemDraft.originalPrice}
-                          onChange={(e) =>
-                            setItemDraft((d) => ({
-                              ...d,
-                              originalPrice: e.target.value,
-                            }))
-                          }
-                        />
+                      </div>
+                      <div>
+                        <label className="field-label">Price</label>
+                        <div className="input-prefix">
+                          <span>₱</span>
+                          <input
+                            className="field-input"
+                            placeholder="0"
+                            type="number"
+                            min="0"
+                            value={itemDraft.price}
+                            onChange={(e) => setItemDraft((d) => ({ ...d, price: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") submitAddItem(); }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="field-label">Original Price</label>
+                        <div className="input-prefix">
+                          <span>₱</span>
+                          <input
+                            className="field-input"
+                            placeholder="Optional"
+                            type="number"
+                            min="0"
+                            value={itemDraft.originalPrice}
+                            onChange={(e) => setItemDraft((d) => ({ ...d, originalPrice: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="field-label">Status</label>
                         <select
-                          className="others-sel"
+                          className="field-input"
                           value={itemDraft.status}
                           onChange={(e) =>
-                            setItemDraft((d) => ({
-                              ...d,
-                              status: e.target.value as
-                                | "available"
-                                | "sold_out",
-                            }))
+                            setItemDraft((d) => ({ ...d, status: e.target.value as "available" | "sold_out" }))
                           }
                         >
                           <option value="available">Available</option>
                           <option value="sold_out">Sold Out</option>
                         </select>
                       </div>
-                      <input
-                        className="field-input"
-                        style={{ marginTop: 8 }}
-                        placeholder="Notes (optional)"
-                        value={itemDraft.notes}
-                        onChange={(e) =>
-                          setItemDraft((d) => ({ ...d, notes: e.target.value }))
-                        }
-                      />
-                      <div className="item-actions" style={{ marginTop: 8 }}>
-                        <button
-                          className="qty-btn icon-btn icon-btn-confirm"
-                          title="Save"
-                          disabled={busy}
-                          onClick={submitAddItem}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="qty-btn icon-btn icon-btn-cancel"
-                          title="Cancel"
-                          onClick={() => {
-                            setAddingItem(false);
-                            setItemDraft(EMPTY_ITEM_DRAFT);
-                          }}
-                        >
-                          ✕
-                        </button>
+                      <div className="pl-add-notes">
+                        <label className="field-label">Notes</label>
+                        <input
+                          className="field-input"
+                          placeholder="Optional — e.g. No rush"
+                          value={itemDraft.notes}
+                          onChange={(e) => setItemDraft((d) => ({ ...d, notes: e.target.value }))}
+                        />
                       </div>
+                    </div>
+                    <div className="pl-add-actions">
+                      <button
+                        className="pl-btn"
+                        onClick={() => { setAddingItem(false); setItemDraft(EMPTY_ITEM_DRAFT); }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="pl-btn pl-btn-primary"
+                        disabled={busy || !itemDraft.name.trim() || itemDraft.price === ""}
+                        onClick={submitAddItem}
+                      >
+                        {busy ? "Saving…" : "Save Item"}
+                      </button>
                     </div>
                   </div>
                 )}
 
-                <table className="admin-table">
+                <div className="pl-table-wrap">
+                <table className="admin-table pl-table">
                   <thead>
                     <tr>
-                      <th></th>
+                      <th style={{ width: 28 }}></th>
                       <th>Name</th>
-                      <th>Price</th>
-                      <th>Original Price</th>
+                      <th className="pl-num">Price</th>
+                      <th className="pl-num">Original</th>
                       <th>Status</th>
                       <th>Notes</th>
-                      <th style={{ textAlign: "right" }}>Actions</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedCategory.items.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="field-hint">
-                          No items yet.
+                        <td colSpan={7} className="pl-empty-row">
+                          No items yet. Click <strong>+ Add Item</strong> or <strong>Bulk Paste</strong> to add some.
                         </td>
                       </tr>
                     )}
-                    {selectedCategory.items.length > 0 && (
+                    {selectedCategory.items.length > 0 && visibleItems.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="pl-empty-row">No items match “{itemQuery}”.</td>
+                      </tr>
+                    )}
+                    {visibleItems.length > 0 && (
                       <DndContext
                         sensors={sensors}
                         collisionDetection={closestCenter}
@@ -884,7 +927,7 @@ export default function PricelistsClient({
                           items={selectedCategory.items.map((it) => it.id)}
                           strategy={verticalListSortingStrategy}
                         >
-                          {selectedCategory.items.map((it) =>
+                          {visibleItems.map((it) =>
                             editingItemId === it.id ? (
                               <ItemEditRow
                                 key={it.id}
@@ -898,6 +941,7 @@ export default function PricelistsClient({
                               <SortableItemRow
                                 key={it.id}
                                 item={it}
+                                dragDisabled={!!itemQuery.trim()}
                                 onEdit={() => startEditItem(it)}
                                 onDelete={() => deleteItem(it.id)}
                                 onToggleSoldOut={() => toggleSoldOut(it)}
@@ -909,11 +953,36 @@ export default function PricelistsClient({
                     )}
                   </tbody>
                 </table>
+                </div>
+                {itemQuery.trim() && visibleItems.length > 0 && (
+                  <p className="field-hint" style={{ marginTop: 8 }}>Clear the search to drag and reorder items.</p>
+                )}
               </>
             )}
           </div>
         </div>
       </div>
+
+      {bulkOpen && selectedCategory && (
+        <BulkPasteModal
+          categoryId={selectedCategory.id}
+          categoryName={selectedCategory.name}
+          items={selectedCategory.items}
+          onClose={() => setBulkOpen(false)}
+          onApplied={(items, summary) => {
+            setGames((prev) =>
+              prev.map((g) => ({
+                ...g,
+                categories: g.categories.map((c) =>
+                  c.id === selectedCategory.id ? { ...c, items } : c,
+                ),
+              })),
+            );
+            setBulkOpen(false);
+            setNotice(`${selectedCategory.name}: ${summary}.`);
+          }}
+        />
+      )}
 
       {confirmModal && (
         <div className="qr-modal-overlay" onClick={() => setConfirmModal(null)}>
@@ -1128,11 +1197,13 @@ function CategoryEditRow({
 
 function SortableItemRow({
   item,
+  dragDisabled,
   onEdit,
   onDelete,
   onToggleSoldOut,
 }: {
   item: Item;
+  dragDisabled?: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggleSoldOut: () => void;
@@ -1144,57 +1215,45 @@ function SortableItemRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id });
+  } = useSortable({ id: item.id, disabled: dragDisabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     background: isDragging ? "rgba(255,255,255,0.06)" : undefined,
   };
+  const soldOut = item.status === "sold_out";
 
   return (
-    <tr ref={setNodeRef} style={style}>
-      <td style={{ width: 32 }}>
+    <tr ref={setNodeRef} style={style} className={`pl-row ${soldOut ? "pl-row-soldout" : ""}`}>
+      <td>
+        {!dragDisabled && (
+          <button className="pl-drag" title="Drag to reorder" {...attributes} {...listeners}>
+            ⠿
+          </button>
+        )}
+      </td>
+      <td className="pl-name">{item.name}</td>
+      <td className="pl-num pl-price">₱{item.price.toLocaleString()}</td>
+      <td className="pl-num">
+        {item.originalPrice != null ? <s className="pl-orig">₱{item.originalPrice.toLocaleString()}</s> : <span className="pl-dash">—</span>}
+      </td>
+      <td>
         <button
-          className="qty-btn icon-btn"
-          title="Drag to reorder"
-          style={{ cursor: "grab" }}
-          {...attributes}
-          {...listeners}
+          className={`pl-status ${soldOut ? "pl-status-out" : "pl-status-ok"}`}
+          title={soldOut ? "Click to mark available" : "Click to mark sold out"}
+          onClick={onToggleSoldOut}
         >
-          ⠿
+          {soldOut ? "Sold Out" : "Available"}
         </button>
       </td>
-      <td>{item.name}</td>
-      <td>₱{item.price}</td>
-      <td>{item.originalPrice != null ? `₱${item.originalPrice}` : "—"}</td>
-      <td>
-        <span
-          className={`badge badge-${item.status === "available" ? "done" : "pending"}`}
-        >
-          {item.status === "available" ? "Available" : "Sold Out"}
-        </span>
-      </td>
-      <td className="field-hint">{item.notes || "—"}</td>
+      <td className="pl-notes" title={item.notes ?? undefined}>{item.notes || <span className="pl-dash">—</span>}</td>
       <td className="actions-cell">
-        <div className="item-actions">
-          <button
-            className="qty-btn icon-btn"
-            title={
-              item.status === "available" ? "Mark sold out" : "Mark available"
-            }
-            onClick={onToggleSoldOut}
-          >
-            {item.status === "available" ? "⊘" : "✓"}
-          </button>
-          <button className="qty-btn icon-btn" title="Edit" onClick={onEdit}>
+        <div className="item-actions pl-row-actions">
+          <button className="pl-icon" title="Edit" aria-label={`Edit ${item.name}`} onClick={onEdit}>
             ✎
           </button>
-          <button
-            className="qty-btn icon-btn"
-            title="Delete"
-            onClick={onDelete}
-          >
+          <button className="pl-icon pl-icon-danger" title="Delete" aria-label={`Delete ${item.name}`} onClick={onDelete}>
             ✕
           </button>
         </div>

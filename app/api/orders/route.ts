@@ -1,5 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendOrderToSheet } from '@/lib/gsheet';
+import { buildSheetOrder } from '@/lib/sheetOrder';
+import { nextOrderCode } from '@/lib/orderCode';
+import { getCustomer } from '@/lib/customerAuth';
+import { customerOrderInclude, toCustomerOrder } from '@/lib/customerOrders';
+import { renderReceipt } from '@/lib/receiptEmail';
+import { sendMail } from '@/lib/mailer';
 
 // GET /api/orders?game=&status= — used by the admin Orders view
 export async function GET(req: NextRequest) {
@@ -23,8 +30,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  const order = await prisma.order.create({
+  // Logged-in customer: link the order to their account and trust their verified email
+  const customer = await getCustomer(req);
+  const email: string | null = customer?.email ?? body.email ?? null;
+
+  const order = await prisma.$transaction(async (tx) => tx.order.create({
     data: {
+      orderCode: await nextOrderCode(tx, body.categoryId),
       gameId: body.gameId,
       categoryId: body.categoryId,
       itemId: body.itemId ?? null,
@@ -36,9 +48,35 @@ export async function POST(req: NextRequest) {
       paymentMethodId: body.paymentMethodId,
       proofOfPaymentUrl: body.proofOfPaymentUrl,
       facebookName: body.facebookName,
-      email: body.email,
+      email,
+      customerId: customer?.id ?? null,
     },
-  });
+  }));
+
+  // After saving: mirror to the Google Sheet and email the receipt, in parallel.
+  // Awaited so they finish on serverless hosts; neither can fail the order (errors are only logged).
+  await Promise.allSettled([
+    (async () => {
+      try {
+        await sendOrderToSheet(await buildSheetOrder(order.id, { heroId: body.heroId, phaseId: body.phaseId, origin: req.nextUrl.origin }));
+      } catch (err) {
+        console.error('[gsheet] could not build sheet row for order', order.id, err);
+      }
+    })(),
+    (async () => {
+      if (!email) return;
+      try {
+        const full = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: customerOrderInclude });
+        const receipt = renderReceipt(toCustomerOrder(full), {
+          customerName: (customer?.user_metadata?.full_name as string | undefined) || order.facebookName,
+          siteUrl: process.env.SITE_URL || req.nextUrl.origin,
+        });
+        await sendMail({ to: email, ...receipt });
+      } catch (err) {
+        console.error('[mail] could not send receipt for order', order.id, err);
+      }
+    })(),
+  ]);
 
   return NextResponse.json(order, { status: 201 });
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { generateCategoryCode } from '@/lib/orderCode';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -11,8 +12,15 @@ export async function POST(req: NextRequest) {
     where: { gameId },
     _max: { sortOrder: true },
   });
+  const game = await prisma.game.findUnique({ where: { id: gameId }, select: { name: true } });
   const category = await prisma.category.create({
-    data: { gameId, name, group, sortOrder: (max._max.sortOrder ?? -1) + 1 },
+    data: {
+      gameId,
+      name,
+      group,
+      sortOrder: (max._max.sortOrder ?? -1) + 1,
+      code: await generateCategoryCode(name, game?.name ?? ''),
+    },
   });
   return NextResponse.json(category);
 }

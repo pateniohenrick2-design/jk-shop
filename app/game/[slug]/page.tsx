@@ -26,7 +26,7 @@ export default async function GamePage({ params }: { params: { slug: string } })
 
   if (!game) return notFound();
 
-  const paymentMethods = await prisma.paymentMethod.findMany({ where: { isActive: true } });
+  const paymentMethods = await prisma.paymentMethod.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
 
   // Prisma's Decimal type can't cross the server->client component boundary as-is,
   // so plain numbers/objects are built here before handing off to the client form.
@@ -53,7 +53,7 @@ export default async function GamePage({ params }: { params: { slug: string } })
           name: e.name,
           basePrice: Number(e.basePrice),
           endDate: e.endDate.toISOString(),
-          heroes: e.heroes.map((h) => ({ id: h.id, heroName: h.heroName, price: Number(h.price) })),
+          heroes: e.heroes.map((h) => ({ id: h.id, heroName: h.heroName, price: Number(h.price), imageUrl: h.imageUrl })),
           schedule: e.schedule.map((s) => ({
             id: s.id,
             phaseName: s.phaseName,
@@ -70,6 +70,8 @@ export default async function GamePage({ params }: { params: { slug: string } })
     name: p.name,
     accountName: p.accountName,
     accountNumber: p.accountNumber,
+    qrImageUrl: p.qrImageUrl,
+    logoUrl: p.logoUrl,
   }));
 
   return (

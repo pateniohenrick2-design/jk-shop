@@ -25,11 +25,22 @@ const games: GameDef[] = [
         name: 'Diamonds', group: 'main', fields: MLBB_FIELDS,
         items: [
           { name: 'Weekly Diamond Pass', price: 114 },
-          { name: '11 Diamonds', price: 12 }, { name: '22 Diamonds', price: 23 },
+          { name: '11 Diamonds', price: 11 }, { name: '22 Diamonds', price: 23 },
           { name: '56 Diamonds', price: 55 }, { name: '112 Diamonds', price: 110 },
           { name: '168 Diamonds', price: 164 }, { name: '223 Diamonds', price: 219 },
           { name: '279 Diamonds', price: 273 }, { name: '301 Diamonds', price: 296 },
-          { name: '336 Diamonds', price: 332 },
+          { name: '336 Diamonds', price: 332 }, { name: '448 Diamonds', price: 441 },
+          { name: '570 Diamonds', price: 547 }, { name: '626 Diamonds', price: 600 },
+          { name: '682 Diamonds', price: 654 }, { name: '738 Diamonds', price: 710 },
+          { name: '749 Diamonds', price: 721 }, { name: '793 Diamonds', price: 763 },
+          { name: '849 Diamonds', price: 819 }, { name: '906 Diamonds', price: 876 },
+          { name: '1018 Diamonds', price: 989 }, { name: '1163 Diamonds', price: 1099 },
+          { name: '1733 Diamonds', price: 1643 }, { name: '2398 Diamonds', price: 2173 },
+          { name: '3561 Diamonds', price: 3269 }, { name: '4131 Diamonds', price: 3816 },
+          { name: '5132 Diamonds', price: 4675 }, { name: '6042 Diamonds', price: 5444 },
+          { name: '7205 Diamonds', price: 6539 }, { name: '8440 Diamonds', price: 7613 },
+          { name: '9603 Diamonds', price: 8712 }, { name: '10838 Diamonds', price: 9786 },
+          { name: '12084 Diamonds', price: 10884 }, { name: '18126 Diamonds', price: 16328 },
         ],
       },
       {
@@ -65,6 +76,15 @@ const games: GameDef[] = [
           { name: 'Normal (299💎)', price: 169 },
           { name: 'Normal (269💎)', price: 154 },
           { name: 'Painted (188💎)', price: 109 },
+        ],
+      },
+      {
+        name: 'Starlight', group: 'main', fields: MLBB_FIELDS,
+        items: [
+          { name: 'Normal Starlight via Gifting', price: 159 },
+          { name: 'Premium Starlight via Gifting', price: 299 },
+          { name: 'Normal Starlight via Recharge (301 Diamonds)', price: 291 },
+          { name: 'Premium Starlight via Recharge (749 Diamonds)', price: 708 },
         ],
       },
       { name: 'Callback Form', group: 'others', fields: [{ label: 'Invitation Code' }, { label: 'Enter IGN' }], items: [] },
@@ -134,11 +154,19 @@ const games: GameDef[] = [
   { name: 'Magic Chess: GoGo', slug: 'mcgg', categories: [
       { name: 'Order', group: 'main', fields: MLBB_FIELDS, items: [] },
   ]},
-  { name: 'Robux Plus', slug: 'robux-plus', categories: [
-      { name: 'Order', group: 'main', fields: [{ label: 'Username' }, { label: 'Display Name' }, { label: 'Profile Screenshot (attach)' }], items: [] },
+   { name: 'Robux Plus', slug: 'robux-plus', categories: [
+      { name: 'Order', group: 'main', fields: [{ label: 'Username' }, { label: 'Display Name' }, { label: 'Profile Screenshot (attach)' }], items: [
+        { name: '100 Robux', price: 68 }, { name: '200 Robux', price: 136 }, { name: '300 Robux', price: 204 },
+        { name: '400 Robux', price: 272 }, { name: '500 Robux', price: 340 }, { name: '600 Robux', price: 407 },
+        { name: '700 Robux', price: 474 }, { name: '800 Robux', price: 541 }, { name: '900 Robux', price: 608 },
+        { name: '1,000 Robux', price: 675, notes: '0–1 day' },
+      ] },
   ]},
   { name: 'Valorant', slug: 'valorant', categories: [
-      { name: 'Order', group: 'main', fields: [{ label: 'Riot ID & Tag' }], items: [] },
+      { name: 'Order', group: 'main', fields: [{ label: 'Riot ID & Tag' }], items: [
+        { name: '475 VP', price: 197 }, { name: '1,000 VP', price: 395 }, { name: '2,050 VP', price: 792 },
+        { name: '3,650 VP', price: 1387 }, { name: '5,350 VP', price: 1982 }, { name: '11,000 VP', price: 4018 },
+      ] },
   ]},
   { name: 'Wuthering Waves', slug: 'wuthering-waves', categories: [
       { name: 'Lunite', group: 'main', fields: [{ label: 'Enter User ID' }, { label: 'Server' }], items: [
@@ -173,8 +201,20 @@ const games: GameDef[] = [
         { name: '3,275 Core', price: 1445 }, { name: '4,800 Core', price: 2058 }, { name: '10,000 Core', price: 4110 },
       ]},
   ]},
-  { name: 'Call of Duty Mobile', slug: 'cod-mobile', categories: [
-    { name: 'Order', group: 'main', fields: [{ label: 'Enter UID' }], items: [] },
+   { name: 'Call of Duty Mobile', slug: 'cod-mobile', categories: [
+    { name: 'CP', group: 'main', fields: [{ label: 'Enter UID' }], items: [
+      { name: '20 CP', price: 11 }, { name: '40 CP', price: 22 }, { name: '100 CP', price: 51 },
+      { name: '208 CP', price: 100 }, { name: '416 CP', price: 200 }, { name: '1,080 CP', price: 499 },
+      { name: '2,320 CP', price: 996 },
+    ] },
+    { name: 'GS - CP', group: 'main', fields: [{ label: 'Enter UID' }], items: [
+      { name: '10 GS = 20 CP', price: 10, notes: 'Not stockable' },
+      { name: '20 GS = 40 CP', price: 21, notes: 'Not stockable' },
+      { name: '50 GS = 100 CP', price: 51, notes: 'Not stockable' },
+      { name: '100 GS = 208 CP', price: 99, notes: 'Not stockable' },
+      { name: '200 GS = 416 CP', price: 197, notes: 'Not stockable' },
+      { name: '1,000 GS = 2,320 CP', price: 992, notes: 'Not stockable' },
+    ] },
   ]},
 ];
 
@@ -259,13 +299,63 @@ async function main() {
 
   console.log('Ensuring default admin account...');
   const defaultPasswordHash = await bcrypt.hash('changeme123', 10);
-  await prisma.admin.upsert({
+  const adminAccount = await prisma.admin.upsert({
     where: { username: 'admin' },
     update: {},
     create: { username: 'admin', passwordHash: defaultPasswordHash, role: 'super_admin' },
   });
 
-  console.log('Seed complete ✅ — all 8 games, categories, pricelists, events, payment methods, and default admin inserted.');
+  console.log('Inserting sample orders...');
+  const gcash = await prisma.paymentMethod.findFirst({ where: { name: 'GCash' } });
+  const maya = await prisma.paymentMethod.findFirst({ where: { name: 'MAYA' } });
+
+  const mlbbDiamondsCat = await prisma.category.findFirst({ where: { name: 'Diamonds', game: { slug: 'mlbb' } } });
+  const mlbb56 = await prisma.pricelistItem.findFirst({ where: { name: '56 Diamonds', categoryId: mlbbDiamondsCat?.id } });
+
+  const valorantCat = await prisma.category.findFirst({ where: { game: { slug: 'valorant' } } });
+  const valorant1000 = await prisma.pricelistItem.findFirst({ where: { name: '1,000 VP', categoryId: valorantCat?.id } });
+
+  const robuxCat = await prisma.category.findFirst({ where: { game: { slug: 'robux-plus' } } });
+  const robux400 = await prisma.pricelistItem.findFirst({ where: { name: '400 Robux', categoryId: robuxCat?.id } });
+
+  const codCpCat = await prisma.category.findFirst({ where: { name: 'CP', game: { slug: 'cod-mobile' } } });
+  const cod208 = await prisma.pricelistItem.findFirst({ where: { name: '208 CP', categoryId: codCpCat?.id } });
+
+  const wildRiftCat = await prisma.category.findFirst({ where: { game: { slug: 'wild-rift' } } });
+  const wildRift1000 = await prisma.pricelistItem.findFirst({ where: { name: '1,000 Core', categoryId: wildRiftCat?.id } });
+
+  const sampleOrders = [
+    { item: mlbb56, category: mlbbDiamondsCat, fields: { '0': '123456789', '1': '2222 PH', '2': 'ShadowBlade' }, qty: 1, payment: gcash, fb: 'Juan Dela Cruz', email: 'juan@example.com', status: 'pending' as const },
+    { item: valorant1000, category: valorantCat, fields: { '0': 'ShadowBlade#PH1' }, qty: 1, payment: maya, fb: 'Maria Santos', email: 'maria@example.com', status: 'in_progress' as const },
+    { item: robux400, category: robuxCat, fields: { '0': 'coolbuilder22', '1': 'CoolBuilder', '2': '' }, qty: 1, payment: gcash, fb: 'Mark Reyes', email: null, status: 'successful' as const },
+    { item: cod208, category: codCpCat, fields: { '0': '9988776655' }, qty: 2, payment: maya, fb: 'Angel Ramos', email: 'angel@example.com', status: 'refund' as const },
+    { item: wildRift1000, category: wildRiftCat, fields: { '0': 'RiftKing123' }, qty: 1, payment: gcash, fb: 'Kevin Tan', email: null, status: 'failed' as const },
+  ];
+
+  for (const o of sampleOrders) {
+    if (!o.item || !o.category || !o.payment) continue;
+    const unitPrice = Number(o.item.price);
+    const order = await prisma.order.create({
+      data: {
+        gameId: o.category.gameId,
+        categoryId: o.category.id,
+        itemId: o.item.id,
+        accountFields: o.fields,
+        quantity: o.qty,
+        unitPrice,
+        totalPrice: unitPrice * o.qty,
+        paymentMethodId: o.payment.id,
+        facebookName: o.fb,
+        email: o.email,
+        status: o.status,
+      },
+    });
+    await prisma.orderStatusHistory.create({
+      data: { orderId: order.id, oldStatus: null, newStatus: o.status, adminId: adminAccount.id },
+    });
+  }
+
+  console.log('Seed complete ✅ — all 8 games, categories, pricelists, events, payment methods, default admin, and 5 sample orders inserted.');
 }
 
 main().finally(() => prisma.$disconnect());

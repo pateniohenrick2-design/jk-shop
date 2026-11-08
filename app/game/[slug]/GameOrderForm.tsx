@@ -1,16 +1,21 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { compressImage } from '@/lib/compressImage';
+import { supabase } from '@/lib/supabase';
+import { useCustomer } from '@/lib/useCustomer';
+import PaymentLogo from '@/components/PaymentLogo';
 
 type Item = { id: string; name: string; price: number; status: string };
 type Field = { id: string; label: string; helperText?: string | null };
-type Hero = { id: string; heroName: string; price: number };
+type Hero = { id: string; heroName: string; price: number; imageUrl: string | null };
 type SchedulePhase = { id: string; phaseName: string; startDate: string; endDate: string; price: number };
 type EventDef = { id: string; name: string; basePrice: number; endDate: string; heroes: Hero[]; schedule: SchedulePhase[] };
 type Category = { id: string; name: string; group: string; fields: Field[]; items: Item[]; events: EventDef[] };
 type Game = { id: string; name: string; slug: string; description?: string | null; categories: Category[] };
-type PaymentMethod = { id: string; name: string; accountName: string; accountNumber: string };
+type PaymentMethod = { id: string; name: string; accountName: string; accountNumber: string; qrImageUrl: string | null; logoUrl: string | null };
 
 export default function GameOrderForm({ game, paymentMethods }: { game: Game; paymentMethods: PaymentMethod[] }) {
   const mainCats = game.categories.filter((c) => c.group === 'main');
@@ -40,6 +45,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const [qrPayment, setQrPayment] = useState<PaymentMethod | null>(null);
   const [facebookName, setFacebookName] = useState('');
   const [email, setEmail] = useState('');
+  const { user: customer } = useCustomer();
+  const router = useRouter();
+  // Logged-in customers: use their verified account email (field becomes read-only)
+  useEffect(() => {
+    if (customer?.email) setEmail(customer.email);
+  }, [customer?.email]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -163,14 +174,22 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
         }
       }
 
+      // Send the login token so the server can confirm the email is the customer's verified one
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
       const res = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           gameId: game.id,
           categoryId: category.id,
           itemId: item?.id ?? null,
           eventId: selectedEvent?.id ?? null,
+          heroId: selectedHero?.id ?? null,
+          phaseId: selectedPhase?.id ?? null,
           accountFields: accountValues,
           quantity,
           unitPrice,
@@ -182,7 +201,24 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       });
       if (!res.ok) throw new Error('Server rejected the order.');
       const data = await res.json();
-      setResult({ ok: true, msg: `Order submitted! Your order ID is ${data.id}. We'll process it shortly.` });
+      const orderCode: string = data.orderCode ?? data.id;
+      // Hand the summary to the full-page confirmation (kept only in this browser tab)
+      try {
+        sessionStorage.setItem('jk:lastOrder', JSON.stringify({
+          orderCode,
+          game: game.name,
+          category: category.name,
+          item: item?.name || [selectedEvent?.name, selectedHero?.heroName].filter(Boolean).join(' – ') || category.name,
+          phase: selectedPhase?.phaseName ?? null,
+          quantity,
+          total,
+          paymentMethod: paymentMethods.find((p) => p.id === paymentId)?.name ?? '',
+          email: customer?.email ?? email,
+          loggedIn: !!customer,
+        }));
+      } catch { /* storage blocked — the page still works from the URL */ }
+      router.push(`/order-success?code=${encodeURIComponent(orderCode)}`);
+      return;
     } catch (e) {
       setResult({ ok: false, msg: 'Something went wrong submitting your order. Please try again.' });
     } finally {
@@ -193,8 +229,8 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   return (
     <div className="order-wrap">
       {/* LEFT COLUMN */}
-      <div>
-        <div className="panel game-banner">
+      <div className="order-col">
+        <div className="panel game-banner step-banner">
           <img src={`/games/${game.slug}.png`} alt={game.name} />
           <div>
             <h1>{game.name}</h1>
@@ -203,7 +239,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
         </div>
 
         {showCategoryStep && (
-          <div className="panel">
+          <div className="panel step-category">
             <div className="panel-head"><span className="step-num">2</span><h2>Select Category</h2></div>
             <div className="cat-grid">
               {mainCats.map((c) => (
@@ -225,7 +261,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           </div>
         )}
 
-        <div className="panel" ref={orderPanelRef}>
+        <div className="panel step-items" ref={orderPanelRef}>
           <div className="panel-head"><span className="step-num">{stepOrder}</span><h2>Select Order ({category?.name})</h2></div>
           {category && category.items.length > 0 && (
             <div className="item-grid">
@@ -259,6 +295,14 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                 <div className="hero-grid">
                   {selectedEvent.heroes.map((h) => (
                     <button key={h.id} className={`hero-card ${heroId === h.id ? 'active' : ''}`} onClick={() => { setHeroId(h.id); setPhaseId(''); }}>
+                      {h.imageUrl && (
+                        <img
+                          src={`/api/image-proxy?key=${encodeURIComponent(h.imageUrl)}`}
+                          alt={h.heroName}
+                          className="hero-card-img"
+                          loading="lazy"
+                        />
+                      )}
                       <div className="name">{h.heroName}</div>
                       <div className="price">From ₱{h.price}</div>
                     </button>
@@ -292,13 +336,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           )}
         </div>
 
-        <div className="panel" ref={paymentPanelRef}>
+        <div className="panel step-payment" ref={paymentPanelRef}>
           <div className="panel-head"><span className="step-num">{stepPayment}</span><h2>Choose Payment Method</h2></div>
           {paymentMethods.map((p) => {
-            const slug = p.name.toLowerCase().replace(/\s+/g, '-');
             return (
               <div key={p.id} className={`pay-row-v2 ${paymentId === p.id ? 'active' : ''}`} onClick={() => setPaymentId(p.id)}>
-                <img className="pay-logo" src={`/payments/logos/${slug}.png`} alt={p.name} />
+                <PaymentLogo name={p.name} logoUrl={p.logoUrl} />
                 <span className="pay-name">{p.name}</span>
                 <span className="pay-account-name">{p.accountName}</span>
                 <span className="pay-account-number">{p.accountNumber}</span>
@@ -319,7 +362,11 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
             <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
               <button className="qr-modal-close" onClick={() => setQrPayment(null)}>✕</button>
               <h3>{qrPayment.name}</h3>
-              <img src={`/payments/qr/${qrPayment.name.toLowerCase().replace(/\s+/g, '-')}.png`} alt={`${qrPayment.name} QR code`} />
+              {qrPayment.qrImageUrl ? (
+                <img src={`/api/image-proxy?key=${encodeURIComponent(qrPayment.qrImageUrl)}`} alt={`${qrPayment.name} QR code`} />
+              ) : (
+                <p className="qr-missing">QR code not available yet. Please send your payment to the account number below.</p>
+              )}
               <p className="field-hint">{qrPayment.accountName} · {qrPayment.accountNumber}</p>
             </div>
           </div>
@@ -327,8 +374,8 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       </div>
 
       {/* RIGHT COLUMN */}
-      <div>
-        <div className="panel">
+      <div className="order-col">
+        <div className="panel step-account">
           <div className="panel-head"><span className="step-num">1</span><h2>Account Details</h2></div>
           {(category?.fields ?? []).map((f) => (
             <div key={f.id}>
@@ -345,7 +392,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           ))}
         </div>
 
-        <div className="panel">
+        <div className="panel step-qty">
           <div className="panel-head"><span className="step-num">{stepQuantity}</span><h2>Order Quantity</h2></div>
           <div className="qty-row">
             <button className="qty-btn" onClick={() => setQuantity((q) => Math.max(1, q - 1))}>−</button>
@@ -355,7 +402,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           <div className="price-row"><span>Price</span><span>₱{total}</span></div>
         </div>
 
-        <div className="panel" ref={proofPanelRef}>
+        <div className="panel step-proof" ref={proofPanelRef}>
           <div className="panel-head"><span className="step-num">{stepProof}</span><h2>Proof of Payment</h2></div>
           <label className="upload-box">
             {proofFileName || 'Click to attach your receipt or screenshot of payment'}
@@ -373,14 +420,38 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           <p className="field-hint" style={{ color: '#e0c26a', marginTop: 8 }}>NO RECEIPT = NO PROCESS</p>
         </div>
 
-        <div className="panel">
+        <div className="panel step-confirm">
           <div className="panel-head"><span className="step-num">{stepConfirmation}</span><h2>Order Confirmation</h2></div>
           <input ref={facebookRef} className="field-input" placeholder="Enter Facebook Account / Name *" value={facebookName} onChange={(e) => setFacebookName(e.target.value)} required />
           <p className="field-hint">So the seller can reach you if there's an issue with your order</p>
-          <input ref={emailRef} className="field-input" type="email" placeholder="Enter Email *" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <p className="field-hint">We'll send your transaction receipt to this address</p>
+          {customer?.email ? (
+            <>
+              <input ref={emailRef} className="field-input field-input-locked" type="email" value={customer.email} readOnly aria-readonly />
+              <p className="field-hint">✓ Verified email from your account. We'll send your receipt here.</p>
+            </>
+          ) : (
+            <>
+              <input ref={emailRef} className="field-input" type="email" placeholder="Enter Email *" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <p className="field-hint">
+                We'll send your transaction receipt to this address ·{' '}
+                <Link href={`/login?next=${encodeURIComponent(`/game/${game.slug}`)}`} className="login-link">Log in</Link> to fill this automatically
+              </p>
+            </>
+          )}
 
-          {result && <div className={result.ok ? 'success-msg' : 'error-msg'}>{result.msg}</div>}
+          {result && (
+            <div className={result.ok ? 'success-msg' : 'error-msg'}>
+              {result.msg}
+              {result.ok && (
+                <>
+                  {' '}
+                  <Link href="/my-orders" className="login-link">
+                    View it in My Orders →
+                  </Link>
+                </>
+              )}
+            </div>
+          )}
 
           <button className="submit-btn" disabled={submitting} onClick={submitOrder}>
             {submitting ? 'Submitting...' : 'Submit Order'}
