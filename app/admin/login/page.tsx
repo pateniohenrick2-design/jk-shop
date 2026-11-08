@@ -10,6 +10,7 @@ function LoginForm() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -50,14 +51,25 @@ function LoginForm() {
           required
           autoFocus
         />
-        <input
-          className="field-input"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <div className="password-field">
+          <input
+            className="field-input"
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button
+            type="button"
+            className="password-toggle"
+            onClick={() => setShowPassword((s) => !s)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
         {error && <div className="error-msg">{error}</div>}
         <button className="submit-btn" type="submit" disabled={loading}>
           {loading ? 'Signing in...' : 'Sign In'}

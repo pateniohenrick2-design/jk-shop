@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "prisma:studio": "prisma studio",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "reset-admin": "node --env-file=.env scripts/reset-admin-password.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

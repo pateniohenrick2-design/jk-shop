@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/admin/pricelists', label: 'Pricelists' },
   { href: '/admin/events', label: 'Events' },
   { href: '/admin/payments', label: 'Payment Methods' },
+  { href: '/admin/account', label: 'Account' },
 ];
 
 export default function AdminNav({ username, role }: { username: string; role: string }) {
