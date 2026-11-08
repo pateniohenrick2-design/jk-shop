@@ -286,11 +286,21 @@ async function main() {
     const ev = await prisma.event.create({
       data: { categoryId: cat.id, name: e.name, basePrice: e.basePrice, startDate: new Date(e.start), endDate: new Date(e.end) },
     });
-    for (const h of e.heroes) await prisma.eventHero.create({ data: { eventId: ev.id, heroName: h.heroName, price: h.price } });
-    for (const s of e.schedule) {
-      await prisma.eventSchedule.create({
-        data: { eventId: ev.id, phaseName: s.phaseName, startDate: new Date(s.start), endDate: new Date(s.end), price: s.price },
-      });
+    // Delivery phases are stored per hero (each hero can have its own phase price)
+    for (const h of e.heroes) {
+      const hero = await prisma.eventHero.create({ data: { eventId: ev.id, heroName: h.heroName, price: h.price } });
+      for (const s of e.schedule) {
+        await prisma.eventSchedule.create({
+          data: {
+            eventId: ev.id,
+            heroId: hero.id,
+            phaseName: s.phaseName,
+            startDate: new Date(s.start),
+            endDate: new Date(s.end),
+            price: s.price,
+          },
+        });
+      }
     }
   }
 
