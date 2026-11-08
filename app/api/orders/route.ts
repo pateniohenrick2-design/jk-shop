@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { sendOrderToSheet } from '@/lib/gsheet';
 import { buildSheetOrder } from '@/lib/sheetOrder';
 import { nextOrderCode } from '@/lib/orderCode';
@@ -53,9 +54,10 @@ export async function POST(req: NextRequest) {
     },
   }));
 
-  // After saving: mirror to the Google Sheet and email the receipt, in parallel.
-  // Awaited so they finish on serverless hosts; neither can fail the order (errors are only logged).
-  await Promise.allSettled([
+  // After saving: mirror to the Google Sheet and email the receipt, in parallel, in the BACKGROUND.
+  // The customer gets their response right away; waitUntil keeps the Vercel function alive until
+  // both finish. Neither can fail the order (errors are only logged).
+  waitUntil(Promise.allSettled([
     (async () => {
       try {
         await sendOrderToSheet(await buildSheetOrder(order.id, { heroId: body.heroId, phaseId: body.phaseId, origin: req.nextUrl.origin }));
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
         console.error('[mail] could not send receipt for order', order.id, err);
       }
     })(),
-  ]);
+  ]));
 
   return NextResponse.json(order, { status: 201 });
 }

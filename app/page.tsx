@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import HowToOrder from '@/components/HowToOrder';
 
 // Refresh the game list at most every 60s (same as the game pages)
 export const revalidate = 60;
@@ -36,49 +37,13 @@ export default async function HomePage() {
         </p>
         <div className="hero-actions">
           <a href="#games" className="btn-primary">Browse Games →</a>
-          <a href="#how-to-order" className="btn-ghost">How to order</a>
+          <HowToOrder />
         </div>
         <ul className="hero-points">
           <li>✓ Seller-verified orders</li>
           <li>✓ Order ID + email receipt</li>
           <li>✓ Find your orders anytime</li>
         </ul>
-      </section>
-
-      <section id="how-to-order" className="section how-section">
-        <h2>HOW TO ORDER</h2>
-        <p className="sub">Every order is processed manually, so a few quick steps help us get it to you faster.</p>
-        <ol className="how-steps">
-          <li>
-            <span className="how-num">1</span>
-            <strong>Choose your game &amp; item</strong>
-            <p>Enter your account details exactly as they appear in the game.</p>
-          </li>
-          <li>
-            <span className="how-num">2</span>
-            <strong>Pay, then upload your proof</strong>
-            <p>Send payment to the account shown at checkout and attach the screenshot.</p>
-          </li>
-          <li>
-            <span className="how-num">3</span>
-            <strong>Submit &amp; save your Order ID</strong>
-            <p>You’ll get an Order ID right away and a receipt by email.</p>
-          </li>
-          <li>
-            <span className="how-num">4</span>
-            <strong>We top up your account</strong>
-            <p>Our team processes it by hand. Your order details are always saved in <a href="/my-orders">My Orders</a>.</p>
-          </li>
-        </ol>
-        <div className="how-reminders">
-          <strong>⚠️ Before you order</strong>
-          <ul>
-            <li>Double-check your User ID, Server and IGN. We can’t recover top-ups sent to a wrong account.</li>
-            <li>Make sure you’re paying the exact account number shown at checkout.</li>
-            <li>Orders without a payment screenshot can’t be processed.</li>
-            <li>Need help? Message us on Facebook with your Order ID.</li>
-          </ul>
-        </div>
       </section>
 
       <section id="games" className="section">

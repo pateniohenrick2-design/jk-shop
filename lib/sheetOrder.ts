@@ -59,6 +59,7 @@ export async function buildSheetOrder(
     orderCode: order.orderCode ?? order.id,
     createdAt: order.createdAt.toISOString(),
     game: order.game.name,
+    gameSlug: order.game.slug,
     category: order.category.name,
     item,
     orderDetails,

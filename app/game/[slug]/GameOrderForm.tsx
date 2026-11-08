@@ -93,6 +93,33 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
     setPhaseId('');
   }
 
+  // Proof of payment is compressed + uploaded in the background as soon as it's picked,
+  // so Submit only has to wait for it if it hasn't finished yet.
+  const proofUploadRef = useRef<{ file: File; promise: Promise<string> } | null>(null);
+
+  function getProofUpload(file: File): Promise<string> {
+    if (proofUploadRef.current?.file === file) return proofUploadRef.current.promise;
+    const promise = (async () => {
+      const compressed = await compressImage(file);
+      const uploadForm = new FormData();
+      uploadForm.append('file', compressed);
+      uploadForm.append('folder', game.slug);
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: uploadForm });
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to upload proof of payment. Please try again.');
+      }
+      const uploadData = await uploadRes.json();
+      return uploadData.url as string; // full public R2 URL, stored directly
+    })();
+    promise.catch(() => { /* reported on Submit */ });
+    proofUploadRef.current = { file, promise };
+    return promise;
+  }
+
+  // Load the confirmation page ahead of time so the jump after Submit is instant
+  useEffect(() => { router.prefetch('/order-success'); }, [router]);
+
   async function submitOrder() {
     if (!category) return;
     for (const f of category.fields) {
@@ -144,31 +171,14 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       let proofPath: string | null = null;
       if (proofFile) {
         try {
-          const compressed = await compressImage(proofFile);
-
-          const uploadForm = new FormData();
-          uploadForm.append('file', compressed);
-          uploadForm.append('folder', game.slug);
-
-          const uploadRes = await fetch('/api/upload', {
-            method: 'POST',
-            body: uploadForm,
-          });
-
-          if (!uploadRes.ok) {
-            const errData = await uploadRes.json().catch(() => ({}));
-            setResult({
-              ok: false,
-              msg: errData.error || 'Failed to upload proof of payment. Please try again.',
-            });
-            setSubmitting(false);
-            return;
-          }
-
-          const uploadData = await uploadRes.json();
-          proofPath = uploadData.url; // full public R2 URL, stored directly
+          // Usually already finished: the upload starts as soon as the file is picked
+          proofPath = await getProofUpload(proofFile);
         } catch (uploadErr) {
-          setResult({ ok: false, msg: 'Failed to upload proof of payment. Please try again.' });
+          proofUploadRef.current = null; // let the next Submit retry the upload
+          setResult({
+            ok: false,
+            msg: uploadErr instanceof Error && uploadErr.message ? uploadErr.message : 'Failed to upload proof of payment. Please try again.',
+          });
           setSubmitting(false);
           return;
         }
@@ -414,6 +424,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                 const f = e.target.files?.[0] ?? null;
                 setProofFile(f);
                 setProofFileName(f?.name ?? '');
+                if (f) getProofUpload(f); // start uploading now, in the background
               }}
             />
           </label>

@@ -12,6 +12,7 @@ export type SheetOrder = {
   orderCode: string; // human-readable, e.g. "DIA-1108001" — shown in the "Order ID" column
   createdAt: string; // ISO
   game: string;
+  gameSlug: string; // e.g. "mlbb" — games other than MLBB get their own tab in the sheet
   category: string;
   item: string; // e.g. "279 Diamonds"
   orderDetails: string; // e.g. "279 Diamonds – ₱273"

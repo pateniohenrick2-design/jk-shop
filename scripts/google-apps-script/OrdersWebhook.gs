@@ -3,7 +3,9 @@
  *
  * Receives each new website order and appends it to the tab named after the
  * order's category ("Diamonds", "Pre-Order Event", "Shop Items", "Shop Skins", ...).
- * Categories without their own tab go to "Others". Event Skin Gifting orders go to
+ * That's for Mobile Legends; every other game gets one tab per game (e.g. "Genshin Impact"),
+ * created automatically as a copy of "Others".
+ * MLBB categories without their own tab go to "Others". Event Skin Gifting orders go to
  * a separate tab per event (e.g. "Kagura Legend"), created automatically.
  * Columns are filled by HEADER NAME (row 1), so you can reorder or add columns
  * freely — unknown headers (Supplier, Supplier Price, Profit, ...) are left blank.
@@ -26,7 +28,11 @@
  */
 
 const SECRET = 'CHANGE-ME-to-a-long-random-string';
-const FALLBACK_TAB = 'Others';
+const FALLBACK_TAB = 'Others'; // MLBB categories without their own tab
+// Mobile Legends uses the category tabs above. Every OTHER game gets its own tab named after
+// the game (e.g. "Genshin Impact"), created automatically as a copy of the "Others" tab.
+const MAIN_GAME_SLUG = 'mlbb';
+const MAIN_GAME_NAME = /mobile\s*legends|mlbb/i;
 // Event Skin Gifting orders go to one tab PER EVENT (named after the event, e.g. "Kagura Legend").
 // New event tabs are copied from this tab (headers + formatting, data rows cleared).
 const GIFTING_CATEGORY = 'Event Skin Gifting';
@@ -102,8 +108,10 @@ function appendOrder_(o) {
     const lastCol = sheet.getLastColumn();
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     const date = Utilities.formatDate(new Date(o.createdAt), TIMEZONE, 'MMM d, h:mm a');
-    const isOthers = sheet.getName() === FALLBACK_TAB;
-    const details = (isOthers ? o.category + ' — ' : '') + o.orderDetails;
+    // Tabs that mix categories ("Others", per-game tabs) prefix the category, unless they have a Category column
+    const mixedTab = sheet.getName() === FALLBACK_TAB || !isMainGame_(o);
+    const hasCategoryCol = headers.some(function (h) { return String(h).trim().toLowerCase() === 'category'; });
+    const details = (mixedTab && !hasCategoryCol ? o.category + ' — ' : '') + o.orderDetails;
     const payment = o.paymentMethod;
 
     // Header (lower-cased, trimmed) → value. Several aliases cover both tab layouts.
@@ -153,16 +161,64 @@ function appendOrder_(o) {
   }
 }
 
-// Which tab an order belongs in: its event's tab (Event Skin Gifting), its category's tab, or "Others".
+// Which tab an order belongs in:
+//   - MLBB Event Skin Gifting → its event's tab
+//   - MLBB → its category's tab (Diamonds, Shop Skins, ...), or "Others"
+//   - any other game → one tab per game, named after the game (e.g. "Genshin Impact")
 // create=false never creates tabs (used by the backfill).
 function resolveTab_(ss, o, create) {
+  if (!isMainGame_(o)) {
+    if (create) return ensureGameTab_(ss, o.game);
+    return ss.getSheetByName(safeTabName_(o.game)) || ss.getSheetByName(FALLBACK_TAB);
+  }
   if (o.category === GIFTING_CATEGORY && o.eventName) {
     if (create) return ensureEventTab_(ss, o.eventName);
-    const evName = String(o.eventName).replace(/[:\\\/?*\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 99);
-    const ev = ss.getSheetByName(evName);
+    const ev = ss.getSheetByName(safeTabName_(o.eventName));
     if (ev) return ev;
   }
   return ss.getSheetByName(o.category) || ss.getSheetByName(FALLBACK_TAB);
+}
+
+// True for Mobile Legends orders (they use the category tabs). Older payloads without
+// gameSlug fall back to matching the game's name.
+function isMainGame_(o) {
+  if (o.gameSlug) return String(o.gameSlug).toLowerCase() === MAIN_GAME_SLUG;
+  return !o.game || MAIN_GAME_NAME.test(String(o.game));
+}
+
+// Sheet names can't contain : \ / ? * [ ] and max out at 100 characters
+function safeTabName_(name) {
+  return String(name || '').replace(/[:\\\/?*\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 99);
+}
+
+// Returns the tab for a non-MLBB game, creating it if needed: a copy of the "Others" tab
+// (same headers, formatting, dropdowns) with its data rows cleared, placed right after "Others".
+function ensureGameTab_(ss, gameName) {
+  const name = safeTabName_(gameName);
+  if (!name) return ss.getSheetByName(FALLBACK_TAB);
+  return ss.getSheetByName(name) || copyTemplateTab_(ss, name, FALLBACK_TAB,
+    ['Date', 'Order ID', 'Category', 'Order Details', 'Qty', 'User ID', 'Server ID', 'IGN',
+     'Payment', 'Proof', 'Facebook', 'Email', 'Price', 'Status']);
+}
+
+// Copies the template tab (headers + formatting, data cleared) to a new tab right after it.
+// If the template doesn't exist, makes a plain tab with fallbackHeaders.
+function copyTemplateTab_(ss, name, templateName, fallbackHeaders) {
+  const template = ss.getSheetByName(templateName);
+  let sheet;
+  if (template) {
+    sheet = template.copyTo(ss).setName(name);
+    const rows = sheet.getMaxRows();
+    if (rows > 1) sheet.getRange(2, 1, rows - 1, sheet.getMaxColumns()).clearContent();
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(template.getIndex() + 1);
+  } else {
+    sheet = ss.insertSheet(name);
+    sheet.getRange(1, 1, 1, fallbackHeaders.length).setValues([fallbackHeaders]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  ensureOrderIdColumn_(sheet);
+  return sheet;
 }
 
 // ---------- "All Orders" overview ----------
@@ -285,27 +341,10 @@ function addSummaryRow_(summary, o, tabSheet) {
 // tab (same headers, formatting, dropdowns, column widths) with its data rows cleared,
 // placed right after the "Event Skin Gifting" tab.
 function ensureEventTab_(ss, eventName) {
-  // Sheet names can't contain : \ / ? * [ ] and max out at 100 characters
-  const name = String(eventName || '').replace(/[:\\\/?*\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 99);
+  const name = safeTabName_(eventName);
   if (!name) throw new Error('Missing event name');
-  const existing = ss.getSheetByName(name);
-  if (existing) return existing;
-
-  const template = ss.getSheetByName(GIFTING_CATEGORY);
-  let sheet;
-  if (template) {
-    sheet = template.copyTo(ss).setName(name);
-    const rows = sheet.getMaxRows();
-    if (rows > 1) sheet.getRange(2, 1, rows - 1, sheet.getMaxColumns()).clearContent();
-    ss.setActiveSheet(sheet);
-    ss.moveActiveSheet(template.getIndex() + 1);
-  } else {
-    sheet = ss.insertSheet(name);
-    sheet.getRange(1, 1, 1, 9).setValues([['ORDER DATE', 'ORDER ID', 'NAME', 'ID', 'SERVER', 'IGN', 'ORDER', 'STATUS', 'PRICE']]);
-    sheet.setFrozenRows(1);
-  }
-  ensureOrderIdColumn_(sheet);
-  return sheet;
+  return ss.getSheetByName(name) || copyTemplateTab_(ss, name, GIFTING_CATEGORY,
+    ['ORDER DATE', 'ORDER ID', 'NAME', 'ID', 'SERVER', 'IGN', 'ORDER', 'STATUS', 'PRICE']);
 }
 
 // Adds an "Order ID" column right after the date column ("Date" / "ORDER DATE") the first
