@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { manilaStartOfDay, isSoldOut, toManilaDateString } from '@/lib/manilaDate';
 
-type SchedulePhase = { phaseName: string; startDate: string; endDate: string; price: number };
+// soldOutOn: "YYYY-MM-DD" (Philippine day the phase becomes sold out) or "" for never
+type SchedulePhase = { phaseName: string; startDate: string; endDate: string; price: number; soldOutOn: string };
 type Hero = { heroName: string; price: number; imageUrl: string | null; schedule: SchedulePhase[] };
 type EventRow = {
   id: string;
@@ -14,7 +16,6 @@ type EventRow = {
 
 type HeroDraft = {
   heroName: string;
-  price: string;
   imageFile: File | null;
   imagePreview: string | null;
   existingImageUrl: string | null;
@@ -25,6 +26,7 @@ type PhaseDraft = {
   phaseName: string;
   startDate: string;
   endDate: string;
+  soldOutOn: string; // "" = stays available until the event ends
   pricesByHero: string[];
 };
 
@@ -41,22 +43,26 @@ const STATUS_LABEL: Record<string, string> = {
   expired: 'Expired',
 };
 
+// Delivery schedule phase names the admin can pick from
+const PHASE_LABELS = ['First Week', 'Phase 1', 'Phase 2', 'Last Day'];
+
 function emptyHeroDraft(): HeroDraft {
-  return { heroName: '', price: '', imageFile: null, imagePreview: null, existingImageUrl: null };
+  return { heroName: '', imageFile: null, imagePreview: null, existingImageUrl: null };
 }
 
 function emptyPhaseDraft(heroCount: number): PhaseDraft {
-  return { phaseName: '', startDate: '', endDate: '', pricesByHero: Array(heroCount).fill('') };
+  return { phaseName: '', startDate: '', endDate: '', soldOutOn: '', pricesByHero: Array(heroCount).fill('') };
 }
 
 // Rebuild each event's unique phase list (name+dates) from the per-hero schedule arrays,
 // since phases are stored per-hero in the DB but shown/edited as one shared row in the UI.
-function derivePhasesFromHeroes(heroes: Hero[]): { phaseName: string; startDate: string; endDate: string }[] {
-  const seen = new Map<string, { phaseName: string; startDate: string; endDate: string }>();
+type PhaseInfo = { phaseName: string; startDate: string; endDate: string; soldOutOn: string };
+function derivePhasesFromHeroes(heroes: Hero[]): PhaseInfo[] {
+  const seen = new Map<string, PhaseInfo>();
   for (const h of heroes) {
     for (const s of h.schedule) {
       const key = `${s.phaseName}|${s.startDate}|${s.endDate}`;
-      if (!seen.has(key)) seen.set(key, { phaseName: s.phaseName, startDate: s.startDate, endDate: s.endDate });
+      if (!seen.has(key)) seen.set(key, { phaseName: s.phaseName, startDate: s.startDate, endDate: s.endDate, soldOutOn: s.soldOutOn });
     }
   }
   return Array.from(seen.values());
@@ -96,7 +102,15 @@ export default function EventsClient({
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  function updateHero(i: number, field: 'heroName' | 'price', value: string) {
+  // Cheapest delivery-schedule price entered for hero i (null if none) — this is the hero's price
+  function lowestPrice(i: number, phases: PhaseDraft[] = phaseDrafts): number | null {
+    const prices = phases
+      .map((p) => parseFloat(p.pricesByHero[i] ?? ''))
+      .filter((n) => !isNaN(n) && n > 0);
+    return prices.length ? Math.min(...prices) : null;
+  }
+
+  function updateHero(i: number, field: 'heroName', value: string) {
     setHeroDrafts((prev) => prev.map((h, idx) => (idx === i ? { ...h, [field]: value } : h)));
   }
 
@@ -117,7 +131,7 @@ export default function EventsClient({
     setPhaseDrafts((prev) => prev.map((p) => ({ ...p, pricesByHero: p.pricesByHero.filter((_, idx) => idx !== i) })));
   }
 
-  function updatePhaseField(i: number, field: 'phaseName' | 'startDate' | 'endDate', value: string) {
+  function updatePhaseField(i: number, field: 'phaseName' | 'startDate' | 'endDate' | 'soldOutOn', value: string) {
     setPhaseDrafts((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
   }
 
@@ -157,7 +171,6 @@ export default function EventsClient({
     const heroes = e.heroes.length
       ? e.heroes.map((h) => ({
           heroName: h.heroName,
-          price: String(h.price),
           imageFile: null,
           imagePreview: null,
           existingImageUrl: h.imageUrl,
@@ -171,6 +184,7 @@ export default function EventsClient({
         phaseName: phase.phaseName,
         startDate: phase.startDate,
         endDate: phase.endDate,
+        soldOutOn: phase.soldOutOn,
         pricesByHero: e.heroes.map((h) => {
           const match = h.schedule.find(
             (s) => s.phaseName === phase.phaseName && s.startDate === phase.startDate && s.endDate === phase.endDate
@@ -189,15 +203,24 @@ export default function EventsClient({
     if (!name.trim()) { setError('Event name is required.'); return; }
     if (!startDate || !endDate) { setError('Start and end date are required.'); return; }
     if (endDate < startDate) { setError('End date must be after start date.'); return; }
-    const validHeroes = heroDrafts.filter((h) => h.heroName.trim());
+    // Original positions of the named heroes (phase prices are stored by these positions)
+    const heroIdx = heroDrafts.map((h, i) => (h.heroName.trim() ? i : -1)).filter((i) => i >= 0);
+    const validHeroes = heroIdx.map((i) => heroDrafts[i]);
     if (validHeroes.length === 0) { setError('Add at least one hero skin.'); return; }
-    if (validHeroes.some((h) => !h.price || parseFloat(h.price) <= 0)) {
-      setError('Every hero skin needs a price.');
+    if (phaseDrafts.some((p) => !p.phaseName.trim() && (p.startDate || p.endDate || p.pricesByHero.some(Boolean)))) {
+      setError('Choose a phase label for every delivery schedule phase (or remove the empty one).');
       return;
     }
     const validPhases = phaseDrafts.filter((p) => p.phaseName.trim());
     if (validPhases.some((p) => !p.startDate || !p.endDate)) {
       setError('Every delivery schedule phase needs a start and end date.');
+      return;
+    }
+    // Each hero's price now comes from the delivery schedule, so it needs at least one phase price
+    const unpriced = heroIdx.filter((i) => lowestPrice(i, validPhases) == null).map((i) => heroDrafts[i].heroName.trim());
+    if (validPhases.length === 0) { setError('Add at least one delivery schedule phase with prices.'); return; }
+    if (unpriced.length) {
+      setError(`Add a delivery schedule price for: ${unpriced.join(', ')}.`);
       return;
     }
 
@@ -211,7 +234,6 @@ export default function EventsClient({
       formData.append('heroCount', String(validHeroes.length));
       validHeroes.forEach((h, i) => {
         formData.append(`heroName_${i}`, h.heroName.trim());
-        formData.append(`heroPrice_${i}`, h.price);
         if (h.imageFile) formData.append(`heroImage_${i}`, h.imageFile);
         if (h.existingImageUrl) formData.append(`heroExistingImage_${i}`, h.existingImageUrl);
       });
@@ -220,8 +242,9 @@ export default function EventsClient({
         formData.append(`phaseName_${pIdx}`, p.phaseName.trim());
         formData.append(`phaseStart_${pIdx}`, p.startDate);
         formData.append(`phaseEnd_${pIdx}`, p.endDate);
-        validHeroes.forEach((_, hIdx) => {
-          const price = p.pricesByHero[hIdx] ?? '';
+        if (p.soldOutOn) formData.append(`phaseSoldOut_${pIdx}`, p.soldOutOn);
+        heroIdx.forEach((orig, hIdx) => {
+          const price = p.pricesByHero[orig] ?? '';
           if (price) formData.append(`schedulePrice_${pIdx}_${hIdx}`, price);
         });
       });
@@ -248,6 +271,7 @@ export default function EventsClient({
             startDate: s.startDate.slice(0, 10),
             endDate: s.endDate.slice(0, 10),
             price: Number(s.price),
+            soldOutOn: s.soldOutAt ? toManilaDateString(s.soldOutAt) : '',
           })),
         })),
       };
@@ -338,7 +362,13 @@ export default function EventsClient({
                     {uniquePhases.length === 0 && <span className="field-hint">—</span>}
                     {uniquePhases.map((phase, i) => (
                       <div key={i} className="field-hint" style={{ marginBottom: 4 }}>
-                        <strong>{phase.phaseName}</strong> ({phase.startDate} → {phase.endDate}):{' '}
+                        <strong>{phase.phaseName}</strong> ({phase.startDate} → {phase.endDate})
+                        {phase.soldOutOn && (
+                          isSoldOut(manilaStartOfDay(phase.soldOutOn))
+                            ? <span className="badge badge-expired phase-soldout-badge">Sold out</span>
+                            : <span className="phase-soldout-note">· sold out on {phase.soldOutOn}</span>
+                        )}
+                        :{' '}
                         {e.heroes
                           .map((h) => {
                             const match = h.schedule.find(
@@ -417,7 +447,7 @@ export default function EventsClient({
             <span className="event-step">2</span>
             <div>
               <h4>Hero Skins</h4>
-              <p>Add every skin available in this event, with its price and image.</p>
+              <p>Add every skin available in this event, with its image. Prices are set per phase in the Delivery Schedule — each skin starts at its cheapest phase.</p>
             </div>
           </div>
 
@@ -447,19 +477,15 @@ export default function EventsClient({
                       />
                     </div>
                     <div>
-                      <label className="field-label" htmlFor={`hero-price-${i}`}>Base Price</label>
-                      <div className="input-prefix">
-                        <span>₱</span>
-                        <input
-                          id={`hero-price-${i}`}
-                          className="field-input"
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={h.price}
-                          onChange={(e) => updateHero(i, 'price', e.target.value)}
-                        />
-                      </div>
+                      <span className="field-label">Starting Price</span>
+                      {(() => {
+                        const low = lowestPrice(i);
+                        return (
+                          <div className={`hero-auto-price ${low == null ? 'empty' : ''}`}>
+                            {low == null ? 'Set in Delivery Schedule ↓' : <><strong>₱{low}</strong> <span>cheapest phase</span></>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   {heroDrafts.length > 1 && (
@@ -485,8 +511,9 @@ export default function EventsClient({
           <div className="event-section-title">
             <span className="event-step">3</span>
             <div>
-              <h4>Delivery Schedule <span className="event-optional">Optional</span></h4>
-              <p>Each phase applies to all heroes above. Prices can differ per hero; leave one blank to skip that hero for the phase.</p>
+              <h4>Delivery Schedule</h4>
+              <p>Each phase applies to all heroes above. Prices can differ per hero; leave one blank to skip that hero for the phase.
+                Set <strong>Sold Out On</strong> to stop customers picking a phase from 12:00 AM (PH time) that day — pick today to sell it out right away.</p>
             </div>
           </div>
 
@@ -495,12 +522,18 @@ export default function EventsClient({
               <div className="event-phase-row">
                 <div>
                   <label className="field-label">Phase Label</label>
-                  <input
+                  <select
                     className="field-input"
-                    placeholder="e.g. 1st week"
                     value={p.phaseName}
                     onChange={(e) => updatePhaseField(phaseIdx, 'phaseName', e.target.value)}
-                  />
+                  >
+                    <option value="" disabled>Select phase…</option>
+                    {PHASE_LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                    {/* Older events may use a label that isn't in the list — keep it selectable */}
+                    {p.phaseName && !PHASE_LABELS.includes(p.phaseName) && (
+                      <option value={p.phaseName}>{p.phaseName}</option>
+                    )}
+                  </select>
                 </div>
                 <div>
                   <label className="field-label">Start Date</label>
@@ -521,6 +554,30 @@ export default function EventsClient({
                     min={p.startDate || undefined}
                     onChange={(e) => updatePhaseField(phaseIdx, 'endDate', e.target.value)}
                   />
+                </div>
+                <div>
+                  <label className="field-label">
+                    Sold Out On <span className="event-optional">Optional</span>
+                  </label>
+                  <div className="phase-soldout-input">
+                    <input
+                      className="field-input"
+                      type="date"
+                      value={p.soldOutOn}
+                      onChange={(e) => updatePhaseField(phaseIdx, 'soldOutOn', e.target.value)}
+                    />
+                    {p.soldOutOn && (
+                      <button
+                        type="button"
+                        className="phase-soldout-clear"
+                        aria-label="Clear sold-out date"
+                        title="Clear (keep available)"
+                        onClick={() => updatePhaseField(phaseIdx, 'soldOutOn', '')}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"

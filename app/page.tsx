@@ -29,10 +29,11 @@ export default async function HomePage() {
       <Header />
 
       <section className="hero">
+        <div className="hero-content">
         <p className="eyebrow">AFFORDABLE GAME TOP-UP · PROCESSED BY A REAL SELLER</p>
         <h1>Game credits at friendly prices, topped up by hand</h1>
         <p>
-          Pick your game, pay with GCash, Maya or bank transfer, and send your proof of payment. We check every order
+          Pick your game, pay with GCash, Maya or bank transfer, and send your proof of payment. We process every order
           ourselves and load it straight to your account, usually within minutes during store hours.
         </p>
         <div className="hero-actions">
@@ -44,6 +45,8 @@ export default async function HomePage() {
           <li>✓ Order ID + email receipt</li>
           <li>✓ Find your orders anytime</li>
         </ul>
+        </div>
+        <img src="/logo/jk-logo.png" alt="JK" className="hero-logo" />
       </section>
 
       <section id="games" className="section">
@@ -52,7 +55,7 @@ export default async function HomePage() {
 
         <div className="game-grid">
           {games.map((g) => (
-            <Link key={g.id} href={`/game/${g.slug}`} className="game-card">
+            <Link key={g.id} href={`/game/${g.slug}`} className="game-card" data-loading-label={`Loading ${g.name}…`}>
               {/* Drop matching images in /public/games/<slug>.png */}
               <img className="game-icon" src={`/games/${g.slug}.png`} alt={g.name} />
               <p>{g.name}</p>

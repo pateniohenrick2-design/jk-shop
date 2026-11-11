@@ -7,15 +7,59 @@ import { compressImage } from '@/lib/compressImage';
 import { supabase } from '@/lib/supabase';
 import { useCustomer } from '@/lib/useCustomer';
 import PaymentLogo from '@/components/PaymentLogo';
+import { normalizeLabel, savedAccountName, type SavedAccount } from '@/lib/savedAccounts';
+import { isSoldOut } from '@/lib/manilaDate';
 
 type Item = { id: string; name: string; price: number; status: string };
 type Field = { id: string; label: string; helperText?: string | null };
 type Hero = { id: string; heroName: string; price: number; imageUrl: string | null };
-type SchedulePhase = { id: string; phaseName: string; startDate: string; endDate: string; price: number };
+type SchedulePhase = { id: string; heroId: string; phaseName: string; startDate: string; endDate: string; price: number; soldOutAt: string | null };
 type EventDef = { id: string; name: string; basePrice: number; endDate: string; heroes: Hero[]; schedule: SchedulePhase[] };
 type Category = { id: string; name: string; group: string; fields: Field[]; items: Item[]; events: EventDef[] };
 type Game = { id: string; name: string; slug: string; description?: string | null; categories: Category[] };
 type PaymentMethod = { id: string; name: string; accountName: string; accountNumber: string; qrImageUrl: string | null; logoUrl: string | null };
+
+// Lucide icons (copy, qr-code, check), inlined
+const iconProps = {
+  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, className: 'btn-icon',
+} as const;
+
+function CopyIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+function QrIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect width="5" height="5" x="3" y="3" rx="1" />
+      <rect width="5" height="5" x="16" y="3" rx="1" />
+      <rect width="5" height="5" x="3" y="16" rx="1" />
+      <path d="M21 16h-3a2 2 0 0 0-2 2v3" />
+      <path d="M21 21v.01" />
+      <path d="M12 7v3a2 2 0 0 1-2 2H7" />
+      <path d="M3 12h.01" />
+      <path d="M12 3h.01" />
+      <path d="M12 16v.01" />
+      <path d="M16 12h1" />
+      <path d="M21 12v.01" />
+      <path d="M12 21v-1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
 
 export default function GameOrderForm({ game, paymentMethods }: { game: Game; paymentMethods: PaymentMethod[] }) {
   const mainCats = game.categories.filter((c) => c.group === 'main');
@@ -28,6 +72,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   );
 
   const [itemId, setItemId] = useState<string>('');
+  const [itemsExpanded, setItemsExpanded] = useState(false); // long pricelists start at 10 rows
   const item = category?.items.find((it) => it.id === itemId);
 
   const [eventId, setEventId] = useState<string>('');
@@ -35,7 +80,21 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const [phaseId, setPhaseId] = useState<string>('');
   const selectedEvent = category?.events.find((e) => e.id === eventId);
   const selectedHero = selectedEvent?.heroes.find((h) => h.id === heroId);
-  const selectedPhase = selectedEvent?.schedule.find((s) => s.id === phaseId);
+  // Each schedule phase belongs to one hero: only show the selected hero's phases
+  const heroSchedule = selectedEvent && selectedHero ? selectedEvent.schedule.filter((s) => s.heroId === selectedHero.id) : [];
+  // Admin-set "sold out on" dates: re-checked every minute so an open page flips on time
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const phaseSoldOut = (s: SchedulePhase) => isSoldOut(s.soldOutAt, now);
+  // A hero with a delivery schedule is sold out once every one of its phases is
+  const heroSoldOut = (ev: EventDef, heroIdToCheck: string) => {
+    const phases = ev.schedule.filter((s) => s.heroId === heroIdToCheck);
+    return phases.length > 0 && phases.every(phaseSoldOut);
+  };
+  const selectedPhase = heroSchedule.find((s) => s.id === phaseId && !phaseSoldOut(s));
 
   const [quantity, setQuantity] = useState(1);
   const [accountValues, setAccountValues] = useState<Record<string, string>>({});
@@ -43,6 +102,16 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const [proofFileName, setProofFileName] = useState<string>('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [qrPayment, setQrPayment] = useState<PaymentMethod | null>(null);
+  const [copiedId, setCopiedId] = useState('');
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
+  async function copyNumber(p: PaymentMethod) {
+    try {
+      await navigator.clipboard.writeText(p.accountNumber.replace(/\s+/g, ''));
+      setCopiedId(p.id);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopiedId(''), 1800);
+    } catch { /* clipboard blocked — number is still visible to copy by hand */ }
+  }
   const [facebookName, setFacebookName] = useState('');
   const [email, setEmail] = useState('');
   const { user: customer } = useCustomer();
@@ -51,6 +120,88 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   useEffect(() => {
     if (customer?.email) setEmail(customer.email);
   }, [customer?.email]);
+  // Logged-in customers: account details from their past orders for this game, to fill in with one tap
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
+  const [savedKey, setSavedKey] = useState('');
+  useEffect(() => {
+    if (!customer) { setSavedAccounts([]); setSavedKey(''); return; }
+    let active = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch(`/api/saved-accounts?gameId=${encodeURIComponent(game.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok || !active) return;
+      const d: { accounts?: SavedAccount[]; facebookName?: string } = await res.json();
+      const accounts = d.accounts ?? [];
+      setSavedAccounts(accounts);
+      if (accounts[0]) setSavedKey((k) => k || accounts[0].key); // auto-fill the most recent one
+      const fb = d.facebookName;
+      if (fb) setFacebookName((n) => (n.trim() ? n : fb));
+    })().catch(() => { /* autofill is optional */ });
+    return () => { active = false; };
+  }, [customer?.id, game.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saved accounts that have at least one detail this category asks for
+  const usableSaved = savedAccounts.filter((a) => category?.fields.some((f) => a.values[normalizeLabel(f.label)]));
+
+  function applySaved(acc: SavedAccount, overwrite: boolean) {
+    if (!category) return;
+    setAccountValues((v) => {
+      const next = { ...v };
+      for (const f of category.fields) {
+        const val = acc.values[normalizeLabel(f.label)];
+        if (val && (overwrite || !next[f.id]?.trim())) next[f.id] = val;
+      }
+      return next;
+    });
+  }
+
+  // Fill empty fields from the chosen saved account — also after switching category
+  useEffect(() => {
+    const acc = savedAccounts.find((a) => a.key === savedKey);
+    if (acc) applySaved(acc, false);
+  }, [savedKey, savedAccounts, category]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saved account waiting for the customer to confirm removal in the modal
+  const [removeTarget, setRemoveTarget] = useState<SavedAccount | null>(null);
+  useEffect(() => {
+    if (!removeTarget) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setRemoveTarget(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [removeTarget]);
+
+  async function removeSaved(acc: SavedAccount) {
+    setRemoveTarget(null);
+    const prevAccounts = savedAccounts;
+    const prevKey = savedKey;
+    // Remove right away; put it back if the server call fails
+    setSavedAccounts((list) => list.filter((a) => a.key !== acc.key));
+    if (savedKey === acc.key) setSavedKey('');
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch('/api/saved-accounts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ gameId: game.id, key: acc.key }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setSavedAccounts(prevAccounts);
+      setSavedKey(prevKey);
+      setResult({ ok: false, msg: 'Could not remove the saved account. Please try again.' });
+    }
+  }
+
+  function savedMatches(acc: SavedAccount) {
+    const relevant = (category?.fields ?? []).filter((f) => acc.values[normalizeLabel(f.label)]);
+    return relevant.length > 0 && relevant.every((f) => (accountValues[f.id] ?? '').trim() === acc.values[normalizeLabel(f.label)]);
+  }
+
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -72,14 +223,20 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const total = unitPrice * quantity;
 
   const showCategoryStep = game.slug === 'mlbb';
-  const stepOrder = showCategoryStep ? 3 : 2;
-  const stepPayment = showCategoryStep ? 4 : 3;
-  const stepQuantity = showCategoryStep ? 5 : 4;
-  const stepProof = showCategoryStep ? 6 : 5;
-  const stepConfirmation = showCategoryStep ? 7 : 6;
+  // Category → Order → Account → Quantity → Payment → Proof → Confirmation
+  // (games without the category step start numbering at "Select Order")
+  const offset = showCategoryStep ? 1 : 0;
+  const stepCategory = 1;
+  const stepOrder = 1 + offset;
+  const stepAccount = 2 + offset;
+  const stepQuantity = 3 + offset;
+  const stepPayment = 4 + offset;
+  const stepProof = 5 + offset;
+  const stepConfirmation = 6 + offset;
 
   function selectCategory(id: string) {
     setCategoryId(id);
+    setItemsExpanded(false);
     setItemId('');
     setEventId('');
     setHeroId('');
@@ -122,12 +279,6 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
   async function submitOrder() {
     if (!category) return;
-    for (const f of category.fields) {
-      if (!accountValues[f.id]?.trim()) {
-        setResult({ ok: false, msg: `Please fill in "${f.label}".` });
-        return goTo(accountFieldRefs.current[f.id]);
-      }
-    }
     if (category.items.length > 0 && !item) {
       setResult({ ok: false, msg: 'Please select an item first.' });
       return goTo(orderPanelRef.current);
@@ -140,9 +291,15 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       setResult({ ok: false, msg: 'Please select a hero skin first.' });
       return goTo(orderPanelRef.current);
     }
-    if (category.events.length > 0 && selectedEvent && selectedHero && selectedEvent.schedule.length > 0 && !selectedPhase) {
+    if (category.events.length > 0 && selectedEvent && selectedHero && heroSchedule.length > 0 && !selectedPhase) {
       setResult({ ok: false, msg: 'Please select a delivery schedule first.' });
       return goTo(orderPanelRef.current);
+    }
+    for (const f of category.fields) {
+      if (!accountValues[f.id]?.trim()) {
+        setResult({ ok: false, msg: `Please fill in "${f.label}".` });
+        return goTo(accountFieldRefs.current[f.id]);
+      }
     }
     if (!paymentId) {
       setResult({ ok: false, msg: 'Please choose a payment method.' });
@@ -209,7 +366,17 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           email,
         }),
       });
-      if (!res.ok) throw new Error('Server rejected the order.');
+      if (!res.ok) {
+        // e.g. the delivery schedule sold out while the page was open
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 409 && errData.error) {
+          setResult({ ok: false, msg: errData.error });
+          setPhaseId('');
+          goTo(orderPanelRef.current);
+          return;
+        }
+        throw new Error('Server rejected the order.');
+      }
       const data = await res.json();
       const orderCode: string = data.orderCode ?? data.id;
       // Hand the summary to the full-page confirmation (kept only in this browser tab)
@@ -250,7 +417,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
         {showCategoryStep && (
           <div className="panel step-category">
-            <div className="panel-head"><span className="step-num">2</span><h2>Select Category</h2></div>
+            <div className="panel-head"><span className="step-num">{stepCategory}</span><h2>Select Category</h2></div>
             <div className="cat-grid">
               {mainCats.map((c) => (
                 <button key={c.id} className={`cat-btn ${categoryId === c.id ? 'active' : ''}`} onClick={() => selectCategory(c.id)}>
@@ -274,7 +441,9 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
         <div className="panel step-items" ref={orderPanelRef}>
           <div className="panel-head"><span className="step-num">{stepOrder}</span><h2>Select Order ({category?.name})</h2></div>
           {category && category.items.length > 0 && (
-            <div className="item-grid">
+            <>
+            {/* Collapsed: first 10 rows only (CSS hides the rest — 2 per row, 1 per row on tiny phones) */}
+            <div className={`item-grid ${itemsExpanded ? '' : 'collapsed'}`}>
               {category.items.map((it) => (
                 <button
                   key={it.id}
@@ -287,6 +456,24 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                 </button>
               ))}
             </div>
+            {category.items.length > 10 && (
+              <button
+                type="button"
+                className={`item-toggle ${category.items.length <= 20 ? 'few' : ''}`}
+                aria-expanded={itemsExpanded}
+                onClick={() => {
+                  if (itemsExpanded) orderPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  setItemsExpanded((v) => !v);
+                }}
+              >
+                {itemsExpanded ? 'Show less' : `Show all ${category.items.length} items`}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden className={itemsExpanded ? 'flip' : ''}>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            )}
+            </>
           )}
 
           {category && category.items.length === 0 && category.events.length > 0 && (
@@ -303,8 +490,15 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
               {selectedEvent && selectedEvent.heroes.length > 0 && (
                 <div className="hero-grid">
-                  {selectedEvent.heroes.map((h) => (
-                    <button key={h.id} className={`hero-card ${heroId === h.id ? 'active' : ''}`} onClick={() => { setHeroId(h.id); setPhaseId(''); }}>
+                  {selectedEvent.heroes.map((h) => {
+                    const sold = heroSoldOut(selectedEvent, h.id);
+                    return (
+                    <button
+                      key={h.id}
+                      className={`hero-card ${heroId === h.id && !sold ? 'active' : ''} ${sold ? 'sold' : ''}`}
+                      disabled={sold}
+                      onClick={() => { setHeroId(h.id); setPhaseId(''); }}
+                    >
                       {h.imageUrl && (
                         <img
                           src={`/api/image-proxy?key=${encodeURIComponent(h.imageUrl)}`}
@@ -314,25 +508,34 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                         />
                       )}
                       <div className="name">{h.heroName}</div>
-                      <div className="price">From ₱{h.price}</div>
+                      <div className="price">{sold ? 'SOLD OUT' : `From ₱${h.price}`}</div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              {selectedEvent && selectedHero && selectedEvent.schedule.length > 0 && (
+              {selectedEvent && selectedHero && heroSchedule.length > 0 && !heroSoldOut(selectedEvent, selectedHero.id) && (
                 <>
                   <p className="field-hint" style={{ marginTop: 4 }}>Delivery Schedule — {selectedHero.heroName} (price depends on when you order)</p>
                   <div className="schedule-grid">
-                    {selectedEvent.schedule.map((s) => (
-                      <button key={s.id} className={`phase-btn ${phaseId === s.id ? 'active' : ''}`} onClick={() => setPhaseId(s.id)}>
-                        <span>
-                          {s.phaseName}
-                          <span className="range">{new Date(s.startDate).toLocaleDateString()} – {new Date(s.endDate).toLocaleDateString()}</span>
-                        </span>
-                        <span>₱{s.price}</span>
-                      </button>
-                    ))}
+                    {heroSchedule.map((s) => {
+                      const sold = phaseSoldOut(s);
+                      return (
+                        <button
+                          key={s.id}
+                          className={`phase-btn ${phaseId === s.id && !sold ? 'active' : ''} ${sold ? 'sold' : ''}`}
+                          disabled={sold}
+                          onClick={() => setPhaseId(s.id)}
+                        >
+                          <span>
+                            {s.phaseName}
+                            <span className="range">{new Date(s.startDate).toLocaleDateString()} – {new Date(s.endDate).toLocaleDateString()}</span>
+                          </span>
+                          <span>{sold ? 'SOLD OUT' : `₱${s.price}`}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -348,24 +551,79 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
         <div className="panel step-payment" ref={paymentPanelRef}>
           <div className="panel-head"><span className="step-num">{stepPayment}</span><h2>Choose Payment Method</h2></div>
+          <div role="radiogroup" aria-label="Payment method">
           {paymentMethods.map((p) => {
+            const active = paymentId === p.id;
             return (
-              <div key={p.id} className={`pay-row-v2 ${paymentId === p.id ? 'active' : ''}`} onClick={() => setPaymentId(p.id)}>
+              <div
+                key={p.id}
+                className={`pay-row-v2 ${active ? 'active' : ''}`}
+                role="radio"
+                aria-checked={active}
+                tabIndex={0}
+                onClick={() => setPaymentId(p.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPaymentId(p.id); } }}
+              >
                 <PaymentLogo name={p.name} logoUrl={p.logoUrl} />
-                <span className="pay-name">{p.name}</span>
-                <span className="pay-account-name">{p.accountName}</span>
-                <span className="pay-account-number">{p.accountNumber}</span>
-                <button
-                  type="button"
-                  className="view-qr-btn"
-                  onClick={(e) => { e.stopPropagation(); setQrPayment(p); }}
-                >
-                  ⊞ View QR
-                </button>
+                <div className="pay-info">
+                  <span className="pay-name">{p.name}</span>
+                  <span className="pay-account-name">{p.accountName}</span>
+                  <span className="pay-account-number">{p.accountNumber}</span>
+                </div>
+                <span className="pay-radio" aria-hidden />
+                <div className="pay-actions">
+                  <button
+                    type="button"
+                    className="pay-copy-btn"
+                    onClick={(e) => { e.stopPropagation(); setPaymentId(p.id); copyNumber(p); }}
+                  >
+                    {copiedId === p.id ? <><CheckIcon /> Copied</> : <><CopyIcon /> Copy number</>}
+                  </button>
+                  <button
+                    type="button"
+                    className="view-qr-btn"
+                    onClick={(e) => { e.stopPropagation(); setQrPayment(p); }}
+                  >
+                    <QrIcon /> View QR
+                  </button>
+                </div>
               </div>
             );
           })}
+          </div>
         </div>
+
+        {removeTarget && (
+          <div className="qr-modal-overlay" onClick={() => setRemoveTarget(null)}>
+            <div
+              className="qr-modal remove-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="remove-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button className="qr-modal-close" aria-label="Close" onClick={() => setRemoveTarget(null)}>✕</button>
+              <h3 id="remove-modal-title">Remove saved account?</h3>
+              <div className="remove-modal-details">
+                {removeTarget.display.map((d) => (
+                  <div key={d.label} className="remove-modal-row">
+                    <span>{d.label}</span>
+                    <strong>{d.value}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="field-hint">It won't show up for autofill anymore. Your past orders aren't affected.</p>
+              <div className="remove-modal-actions">
+                <button type="button" className="remove-modal-cancel" autoFocus onClick={() => setRemoveTarget(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="remove-modal-confirm" onClick={() => removeSaved(removeTarget)}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {qrPayment && (
           <div className="qr-modal-overlay" onClick={() => setQrPayment(null)}>
@@ -386,7 +644,47 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       {/* RIGHT COLUMN */}
       <div className="order-col">
         <div className="panel step-account">
-          <div className="panel-head"><span className="step-num">1</span><h2>Account Details</h2></div>
+          <div className="panel-head"><span className="step-num">{stepAccount}</span><h2>Account Details</h2></div>
+          {usableSaved.length > 0 && (
+            <div className="saved-accounts">
+              <p className="field-hint">Your saved accounts — tap one to fill in the details</p>
+              <div className="saved-chips">
+                {usableSaved.map((a) => (
+                  <span key={a.key} className={`saved-chip ${savedMatches(a) ? 'active' : ''}`}>
+                    <button
+                      type="button"
+                      className="saved-chip-fill"
+                      onClick={() => { setSavedKey(a.key); applySaved(a, true); }}
+                      title={a.display.map((d) => `${d.label}: ${d.value}`).join('\n')}
+                    >
+                      {savedAccountName(a)}
+                    </button>
+                    <button
+                      type="button"
+                      className="saved-chip-x"
+                      aria-label="Remove saved account"
+                      title="Remove saved account"
+                      onClick={() => setRemoveTarget(a)}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="saved-chip saved-chip-new"
+                  onClick={() => {
+                    setSavedKey('');
+                    setAccountValues({});
+                    const first = category?.fields[0];
+                    if (first) accountFieldRefs.current[first.id]?.focus();
+                  }}
+                >
+                  + New account
+                </button>
+              </div>
+            </div>
+          )}
           {(category?.fields ?? []).map((f) => (
             <div key={f.id}>
               <input
@@ -399,6 +697,15 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
               />
               {f.helperText && <p className="field-hint">{f.helperText}</p>}
             </div>
+          ))}
+          {(category?.fields.length ?? 0) > 0 && (customer ? (
+            usableSaved.length === 0 && (
+              <p className="field-hint">We'll remember these details so you can fill them in with one tap next time.</p>
+            )
+          ) : (
+            <p className="field-hint">
+              <Link href={`/login?next=${encodeURIComponent(`/game/${game.slug}`)}`} className="login-link">Log in</Link> to save your account details for next time
+            </p>
           ))}
         </div>
 
@@ -414,8 +721,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
         <div className="panel step-proof" ref={proofPanelRef}>
           <div className="panel-head"><span className="step-num">{stepProof}</span><h2>Proof of Payment</h2></div>
-          <label className="upload-box">
-            {proofFileName || 'Click to attach your receipt or screenshot of payment'}
+          <label className={`upload-box${proofFileName ? ' upload-box-done' : ''}`}>
+            <span className="upload-icon" aria-hidden>{proofFileName ? '✓' : '📎'}</span>
+            <span className="upload-text">
+              {proofFileName ? <strong>{proofFileName}</strong> : 'Attach your receipt or screenshot of payment'}
+            </span>
+            <span className="upload-btn">{proofFileName ? 'Change file' : 'Choose file'}</span>
             <input
               type="file"
               accept="image/*"

@@ -128,6 +128,7 @@ model EventSchedule {
   startDate  DateTime
   endDate    DateTime
   price      Decimal
+  soldOutAt  DateTime? // admin-set: from this moment the phase shows as SOLD OUT to customers
 }
 
 model PaymentMethod {

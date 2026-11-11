@@ -31,6 +31,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
+  // Event delivery schedule that the admin marked sold out (the page may have been open since before)
+  if (body.phaseId) {
+    const phase = await prisma.eventSchedule.findUnique({ where: { id: String(body.phaseId) }, select: { soldOutAt: true, phaseName: true } });
+    if (phase?.soldOutAt && phase.soldOutAt.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: `Sorry, the "${phase.phaseName}" delivery schedule is sold out. Please pick another schedule.` },
+        { status: 409 },
+      );
+    }
+  }
+
   // Logged-in customer: link the order to their account and trust their verified email
   const customer = await getCustomer(req);
   const email: string | null = customer?.email ?? body.email ?? null;

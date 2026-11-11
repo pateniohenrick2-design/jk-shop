@@ -1,22 +1,24 @@
 import { prisma } from '@/lib/prisma';
 import EventsClient from './EventsClient';
+import { toManilaDateString } from '@/lib/manilaDate';
 
 export const revalidate = 0;
 
 export default async function AdminEventsPage() {
-  const category = await prisma.category.findFirst({
-    where: { name: 'Event Skin Gifting', game: { slug: 'mlbb' } },
-  });
+  // Both at the same time: events are matched through their category instead of waiting for its id
+  const categoryWhere = { name: 'Event Skin Gifting', game: { slug: 'mlbb' } };
+  const [category, events] = await Promise.all([
+    prisma.category.findFirst({ where: categoryWhere, select: { id: true } }),
+    prisma.event.findMany({
+      where: { category: categoryWhere },
+      include: { heroes: { include: { schedule: true } } },
+      orderBy: { startDate: 'desc' },
+    }),
+  ]);
 
   if (!category) {
     return <p className="field-hint">Event Skin Gifting category not found — check your seed data.</p>;
   }
-
-  const events = await prisma.event.findMany({
-    where: { categoryId: category.id },
-    include: { heroes: { include: { schedule: true } } },
-    orderBy: { startDate: 'desc' },
-  });
 
   const serialized = events.map((e) => ({
     id: e.id,
@@ -32,6 +34,7 @@ export default async function AdminEventsPage() {
         startDate: s.startDate.toISOString().slice(0, 10),
         endDate: s.endDate.toISOString().slice(0, 10),
         price: Number(s.price),
+        soldOutOn: toManilaDateString(s.soldOutAt),
       })),
     })),
   }));

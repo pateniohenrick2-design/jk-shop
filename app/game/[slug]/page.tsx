@@ -6,8 +6,18 @@ import GameOrderForm from './GameOrderForm';
 
 export const revalidate = 60;
 
+// Pre-build every game page at deploy time so clicks are served from cache
+// (and fully prefetched by the home page links) instead of hitting the DB first.
+// Games added later still work — they're built on first visit, then cached.
+export async function generateStaticParams() {
+  const games = await prisma.game.findMany({ where: { isActive: true }, select: { slug: true } });
+  return games.map((g) => ({ slug: g.slug }));
+}
+
 export default async function GamePage({ params }: { params: { slug: string } }) {
-  const game = await prisma.game.findUnique({
+  // Both queries are independent, so run them at the same time.
+  const [game, paymentMethods] = await Promise.all([
+    prisma.game.findUnique({
     where: { slug: params.slug },
     include: {
       categories: {
@@ -22,11 +32,11 @@ export default async function GamePage({ params }: { params: { slug: string } })
         orderBy: { sortOrder: 'asc' },
       },
     },
-  });
+    }),
+    prisma.paymentMethod.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
+  ]);
 
   if (!game) return notFound();
-
-  const paymentMethods = await prisma.paymentMethod.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
 
   // Prisma's Decimal type can't cross the server->client component boundary as-is,
   // so plain numbers/objects are built here before handing off to the client form.
@@ -56,10 +66,13 @@ export default async function GamePage({ params }: { params: { slug: string } })
           heroes: e.heroes.map((h) => ({ id: h.id, heroName: h.heroName, price: Number(h.price), imageUrl: h.imageUrl })),
           schedule: e.schedule.map((s) => ({
             id: s.id,
+            heroId: s.heroId,
             phaseName: s.phaseName,
             startDate: s.startDate.toISOString(),
             endDate: s.endDate.toISOString(),
             price: Number(s.price),
+            // Checked in the browser too, so a cached page still flips to SOLD OUT on time
+            soldOutAt: s.soldOutAt ? s.soldOutAt.toISOString() : null,
           })),
         })),
     })),
