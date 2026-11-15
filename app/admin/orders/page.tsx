@@ -42,7 +42,7 @@ export default async function AdminOrdersPage() {
     proofOfPaymentUrl: o.proofOfPaymentUrl,
     facebookName: o.facebookName,
     email: o.email,
-   status: o.status as 'pending' | 'in_progress' | 'successful' | 'refund' | 'failed',
+   status: o.status as 'pending' | 'in_progress' | 'done' | 'successful' | 'refund' | 'failed',
     createdAt: o.createdAt.toISOString(),
     notes: o.internalNotes.map((n) => ({
       id: n.id,

@@ -20,7 +20,7 @@ type OrderRow = {
   proofOfPaymentUrl: string | null;
   facebookName: string | null;
   email: string | null;
- status: 'pending' | 'in_progress' | 'successful' | 'refund' | 'failed';
+ status: 'pending' | 'in_progress' | 'done' | 'successful' | 'refund' | 'failed';
   createdAt: string;
   notes: Note[];
 };
@@ -28,6 +28,7 @@ type OrderRow = {
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
+  done: 'Done',
   successful: 'Successful',
   refund: 'Refund',
   failed: 'Failed',

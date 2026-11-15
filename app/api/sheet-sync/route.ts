@@ -10,8 +10,8 @@ import { prisma } from '@/lib/prisma';
 const STATUS_RULES: [RegExp, OrderStatus][] = [
   [/refund/i, 'refund'],
   [/fail|cancel|invalid|wrong/i, 'failed'],
-  [/success|complete/i, 'successful'],
-  [/done|deliver|\bsent\b/i, 'done'],
+  // The website's "finished" status is Successful, so Done/Sent/Delivered all land there
+  [/success|complete|done|deliver|\bsent\b/i, 'successful'],
   [/progress|processing|ongoing|sending/i, 'in_progress'],
   [/pending|unpaid|waiting|to process/i, 'pending'],
 ];

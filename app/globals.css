@@ -224,6 +224,9 @@ a { color: inherit; text-decoration: none; }
 .badge-pending { background: rgba(224,194,106,.18); color: #e0c26a; }
 .badge-progress { background: rgba(106,176,224,.18); color: #6ab0e0; }
 .badge-done { background: rgba(142,224,142,.18); color: var(--accent); }
+.badge-successful { background: rgba(142,224,142,.18); color: var(--accent); }
+.badge-refund { background: rgba(190,150,230,.18); color: #c9a3ef; }
+.badge-failed { background: rgba(224,138,138,.18); color: #e08a8a; }
 .badge-rush { background: rgba(224,138,138,.18); color: #e08a8a; }
 
 .admin-table { width: 100%; border-collapse: collapse; }
