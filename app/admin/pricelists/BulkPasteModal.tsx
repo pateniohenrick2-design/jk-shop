@@ -10,6 +10,7 @@ type Item = {
   originalPrice: number | null;
   status: "available" | "sold_out";
   notes: string | null;
+  iconUrl?: string | null;
   sortOrder: number;
 };
 

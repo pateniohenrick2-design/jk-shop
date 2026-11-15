@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import HeaderAuth from './HeaderAuth';
+import NavLinks from './NavLinks';
 
 export default function Header() {
   return (
@@ -8,8 +9,7 @@ export default function Header() {
         <img src="/logo/jkshop-logo.png" alt="JK SHOP" className="brand-img" />
       </Link>
       <div className="nav">
-        <Link href="/" className="nav-home">HOME</Link>
-        <Link href="/my-orders" className="muted">MY ORDERS</Link>
+        <NavLinks />
         <HeaderAuth />
       </div>
     </div>

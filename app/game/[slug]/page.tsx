@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { isCategoryOpen } from '@/lib/categoryAvailability';
 import GameOrderForm from './GameOrderForm';
 
 export const revalidate = 60;
@@ -37,6 +38,7 @@ export default async function GamePage({ params }: { params: { slug: string } })
   ]);
 
   if (!game) return notFound();
+  const renderedAt = Date.now();
 
   // Prisma's Decimal type can't cross the server->client component boundary as-is,
   // so plain numbers/objects are built here before handing off to the client form.
@@ -45,16 +47,18 @@ export default async function GamePage({ params }: { params: { slug: string } })
     name: game.name,
     slug: game.slug,
     description: game.description,
-    categories: game.categories.map((c) => ({
+    // Hidden: categories the admin switched off or that are outside their open/close dates
+    categories: game.categories.filter((c) => isCategoryOpen(c, renderedAt)).map((c) => ({
       id: c.id,
       name: c.name,
       group: c.group,
-      fields: c.fields.map((f) => ({ id: f.id, label: f.label, helperText: f.helperText })),
+      fields: c.fields.map((f) => ({ id: f.id, label: f.label, helperText: f.helperText, fieldType: f.fieldType })),
       items: c.items.map((it) => ({
         id: it.id,
         name: it.name,
         price: Number(it.price),
         status: it.status,
+        iconUrl: it.iconUrl,
       })),
       events: c.events
         .filter((e) => e.endDate >= new Date()) // auto-hide once the schedule has passed

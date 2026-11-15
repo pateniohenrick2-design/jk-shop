@@ -24,6 +24,8 @@ enum ItemStatus {
 enum OrderStatus {
   pending
   in_progress
+  reserved   // Event Skin Gifting
+  friends    // Event Skin Gifting: waiting on the friend request
   done
   successful
   refund
@@ -63,6 +65,8 @@ model Category {
   group      CategoryGroup @default(main)
   sortOrder  Int           @default(0)
   isActive   Boolean       @default(true)
+  availableFrom  DateTime? // customers see the category from this moment (null = no start limit)
+  availableUntil DateTime? // ...until this moment, e.g. a Pre-Order Event deadline (null = no end)
   code       String?       @unique // short prefix for order IDs, e.g. "DIA" → DIA-1108001
   fields     FormField[]
   items      PricelistItem[]
@@ -90,6 +94,7 @@ model PricelistItem {
   originalPrice Decimal?
   status        ItemStatus @default(available)
   notes         String?
+  iconUrl       String?    // icon uploaded in Admin → Pricelists (else picked from /public/items by name)
   sortOrder     Int        @default(0)
   orders        Order[]
 }
@@ -209,4 +214,15 @@ model OrderNote {
 model OrderCounter {
   key String @id
   seq Int    @default(0)
+}
+
+// One row (id = 1): shop-wide settings edited in Admin → Store Settings
+model StoreSettings {
+  id            Int      @id @default(1)
+  isOpen        Boolean  @default(true) // customers see an "open/closed" notice
+  closedMessage String?  // shown to customers while closed, e.g. "Back tomorrow 9AM"
+  contactUrl    String?  // footer "Message us" link (Facebook page / m.me link)
+  contactLabel  String?  // footer button text
+  replyTime     String?  // footer reply-time note
+  updatedAt     DateTime @updatedAt
 }

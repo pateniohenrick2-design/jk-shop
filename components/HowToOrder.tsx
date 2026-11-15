@@ -10,7 +10,11 @@ export default function HowToOrder() {
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (window.location.hash === '#how-to-order') setOpen(true);
+    const check = () => { if (window.location.hash === '#how-to-order') setOpen(true); };
+    check();
+    // The footer's 'How to Order' link on the home page only changes the #hash
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
   }, []);
 
   useEffect(() => {

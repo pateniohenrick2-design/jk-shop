@@ -17,6 +17,9 @@ export default async function AdminPricelistsPage() {
           name: true,
           group: true,
           sortOrder: true,
+          isActive: true,
+          availableFrom: true,
+          availableUntil: true,
           items: { orderBy: { sortOrder: 'asc' } },
           // Event Skin Gifting: events are managed on the Events page; shown read-only here
           events: {
@@ -47,6 +50,9 @@ export default async function AdminPricelistsPage() {
       name: c.name,
       group: c.group as 'main' | 'others',
       sortOrder: c.sortOrder,
+      isActive: c.isActive,
+      availableFrom: c.availableFrom?.toISOString() ?? null,
+      availableUntil: c.availableUntil?.toISOString() ?? null,
       items: c.items.map((it) => ({
         id: it.id,
         name: it.name,
@@ -54,6 +60,7 @@ export default async function AdminPricelistsPage() {
         originalPrice: it.originalPrice != null ? Number(it.originalPrice) : null,
         status: it.status as 'available' | 'sold_out',
         notes: it.notes,
+        iconUrl: it.iconUrl,
         sortOrder: it.sortOrder,
       })),
       events: c.events.map((e) => ({

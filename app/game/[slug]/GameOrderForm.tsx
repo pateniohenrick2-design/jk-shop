@@ -9,10 +9,16 @@ import { useCustomer } from '@/lib/useCustomer';
 import PaymentLogo from '@/components/PaymentLogo';
 import { normalizeLabel, savedAccountName, type SavedAccount } from '@/lib/savedAccounts';
 import { itemIcon, isWideIcon } from '@/lib/itemIcons';
+import { screenshotHref } from '@/lib/accountValue';
 import { isSoldOut } from '@/lib/manilaDate';
+import { useStoreSettings } from '@/lib/useStoreSettings';
 
-type Item = { id: string; name: string; price: number; status: string };
-type Field = { id: string; label: string; helperText?: string | null };
+type Item = { id: string; name: string; price: number; status: string; iconUrl?: string | null };
+type Field = { id: string; label: string; helperText?: string | null; fieldType?: string };
+
+// Screenshot-type account fields (e.g. Robux "Profile Screenshot (attach)") are file uploads, like the proof of payment
+const isFileField = (f: Field) => f.fieldType === 'file' || /screenshot|(attach)|attach(ment)?|upload/i.test(f.label);
+const fieldTitle = (f: Field) => f.label.replace(/s*(attach)s*/i, ' ').trim();
 type Hero = { id: string; heroName: string; price: number; imageUrl: string | null };
 type SchedulePhase = { id: string; heroId: string; phaseName: string; startDate: string; endDate: string; price: number; soldOutAt: string | null };
 type EventDef = { id: string; name: string; basePrice: number; endDate: string; heroes: Hero[]; schedule: SchedulePhase[] };
@@ -84,6 +90,17 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   // Each schedule phase belongs to one hero: only show the selected hero's phases
   const heroSchedule = selectedEvent && selectedHero ? selectedEvent.schedule.filter((s) => s.heroId === selectedHero.id) : [];
   // Admin-set "sold out on" dates: re-checked every minute so an open page flips on time
+  const store = useStoreSettings(); // open/closed notice next to Submit
+  // Logged-in customers can skip the email receipt (their orders are on My Orders anyway).
+  // Remembered in this browser; guests always get the receipt.
+  const [sendReceipt, setSendReceipt] = useState(true);
+  useEffect(() => {
+    try { if (localStorage.getItem('jk:sendReceipt') === '0') setSendReceipt(false); } catch { /* storage blocked */ }
+  }, []);
+  function toggleReceipt(v: boolean) {
+    setSendReceipt(v);
+    try { localStorage.setItem('jk:sendReceipt', v ? '1' : '0'); } catch { /* storage blocked */ }
+  }
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);
@@ -99,6 +116,8 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
   const [quantity, setQuantity] = useState(1);
   const [accountValues, setAccountValues] = useState<Record<string, string>>({});
+  // Screenshot fields: picked file name + upload state (the uploaded URL goes into accountValues)
+  const [fieldFiles, setFieldFiles] = useState<Record<string, { name: string; uploading: boolean; error?: string }>>({});
   const [paymentId, setPaymentId] = useState<string>(paymentMethods[0]?.id ?? '');
   const [proofFileName, setProofFileName] = useState<string>('');
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -223,7 +242,8 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const unitPrice = item ? item.price : eventUnitPrice;
   const total = unitPrice * quantity;
 
-  const showCategoryStep = game.slug === 'mlbb';
+  // Any game with more than one category (e.g. CODM: CP + GS - CP) lets the customer pick one
+  const showCategoryStep = game.categories.length > 1;
   // Category → Order → Account → Quantity → Payment → Proof → Confirmation
   // (games without the category step start numbering at "Select Order")
   const offset = showCategoryStep ? 1 : 0;
@@ -255,21 +275,38 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   // so Submit only has to wait for it if it hasn't finished yet.
   const proofUploadRef = useRef<{ file: File; promise: Promise<string> } | null>(null);
 
+  async function uploadImage(file: File, failMsg: string): Promise<string> {
+    const compressed = await compressImage(file);
+    const uploadForm = new FormData();
+    uploadForm.append('file', compressed);
+    uploadForm.append('folder', game.slug);
+    const uploadRes = await fetch('/api/upload', { method: 'POST', body: uploadForm });
+    if (!uploadRes.ok) {
+      const errData = await uploadRes.json().catch(() => ({}));
+      throw new Error(errData.error || failMsg);
+    }
+    const uploadData = await uploadRes.json();
+    return uploadData.url as string; // full public R2 URL, stored directly
+  }
+
+  // Screenshot account field: upload right away; the URL becomes the field's value
+  async function pickFieldFile(f: Field, file: File | null) {
+    if (!file) return;
+    setFieldFiles((m) => ({ ...m, [f.id]: { name: file.name, uploading: true } }));
+    setAccountValues((v) => ({ ...v, [f.id]: '' }));
+    try {
+      const url = await uploadImage(file, `Failed to upload your ${fieldTitle(f)}. Please try again.`);
+      setAccountValues((v) => ({ ...v, [f.id]: url }));
+      setFieldFiles((m) => ({ ...m, [f.id]: { name: file.name, uploading: false } }));
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : 'Upload failed. Please try again.';
+      setFieldFiles((m) => ({ ...m, [f.id]: { name: file.name, uploading: false, error: msg } }));
+    }
+  }
+
   function getProofUpload(file: File): Promise<string> {
     if (proofUploadRef.current?.file === file) return proofUploadRef.current.promise;
-    const promise = (async () => {
-      const compressed = await compressImage(file);
-      const uploadForm = new FormData();
-      uploadForm.append('file', compressed);
-      uploadForm.append('folder', game.slug);
-      const uploadRes = await fetch('/api/upload', { method: 'POST', body: uploadForm });
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to upload proof of payment. Please try again.');
-      }
-      const uploadData = await uploadRes.json();
-      return uploadData.url as string; // full public R2 URL, stored directly
-    })();
+    const promise = uploadImage(file, 'Failed to upload proof of payment. Please try again.');
     promise.catch(() => { /* reported on Submit */ });
     proofUploadRef.current = { file, promise };
     return promise;
@@ -297,8 +334,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       return goTo(orderPanelRef.current);
     }
     for (const f of category.fields) {
+      if (isFileField(f) && fieldFiles[f.id]?.uploading) {
+        setResult({ ok: false, msg: `Your ${fieldTitle(f)} is still uploading — please wait a moment, then tap Submit again.` });
+        return goTo(accountFieldRefs.current[f.id]);
+      }
       if (!accountValues[f.id]?.trim()) {
-        setResult({ ok: false, msg: `Please fill in "${f.label}".` });
+        setResult({ ok: false, msg: isFileField(f) ? `Please attach your ${fieldTitle(f)}.` : `Please fill in "${f.label}".` });
         return goTo(accountFieldRefs.current[f.id]);
       }
     }
@@ -365,6 +406,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           proofOfPaymentUrl: proofPath,
           facebookName,
           email,
+          sendReceipt: customer ? sendReceipt : true,
         }),
       });
       if (!res.ok) {
@@ -393,6 +435,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           paymentMethod: paymentMethods.find((p) => p.id === paymentId)?.name ?? '',
           email: customer?.email ?? email,
           loggedIn: !!customer,
+          receiptSent: customer ? sendReceipt : true,
         }));
       } catch { /* storage blocked — the page still works from the URL */ }
       router.push(`/order-success?code=${encodeURIComponent(orderCode)}`);
@@ -444,9 +487,13 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           {category && category.items.length > 0 && (
             <>
             {/* Collapsed: first 10 rows only (CSS hides the rest — 2 per row, 1 per row on tiny phones) */}
-            <div className={`item-grid ${itemsExpanded ? '' : 'collapsed'}`}>
+            {/* Long item names (e.g. "Normal Starlight via Recharge (301 Diamonds)") get 1 column on phones */}
+            <div className={`item-grid ${itemsExpanded ? '' : 'collapsed'}${category.items.some((it) => it.name.length > 25) ? ' long-names' : ''}`}>
               {category.items.map((it) => {
-                const icon = itemIcon(game.slug, it.name);
+                // Icon uploaded in Admin → Pricelists wins; otherwise one picked by name from /public/items
+                const uploaded = it.iconUrl ? screenshotHref(it.iconUrl) : null;
+                // iconUrl "" = the admin removed the icon on purpose
+                const icon = it.iconUrl === '' ? null : uploaded ?? itemIcon(game.slug, it.name);
                 return (
                 <button
                   key={it.id}
@@ -455,7 +502,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                   onClick={() => setItemId(it.id)}
                 >
                   <span className="item-label">
-                    {icon && <img className={`item-icon ${isWideIcon(icon) ? 'wide' : ''}`} src={icon} alt="" width={32} height={32} loading="lazy" decoding="async" />}
+                    {icon && <img className={`item-icon ${!uploaded && isWideIcon(icon) ? 'wide' : ''}`} src={icon} alt="" width={32} height={32} loading="lazy" decoding="async" />}
                     <span>{it.name}</span>
                   </span>
                   <span>{it.status === 'sold_out' ? 'SOLD OUT' : `₱${it.price}`}</span>
@@ -683,6 +730,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                   onClick={() => {
                     setSavedKey('');
                     setAccountValues({});
+                    setFieldFiles({});
                     const first = category?.fields[0];
                     if (first) accountFieldRefs.current[first.id]?.focus();
                   }}
@@ -692,7 +740,34 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
               </div>
             </div>
           )}
-          {(category?.fields ?? []).map((f) => (
+          {(category?.fields ?? []).map((f) => isFileField(f) ? (
+            <div key={f.id}>
+              {(() => {
+                const st = fieldFiles[f.id];
+                const done = !!accountValues[f.id] && !st?.uploading;
+                return (
+                  <label className={`upload-box upload-box-field${done ? ' upload-box-done' : ''}`}>
+                    <span className="upload-icon" aria-hidden>{st?.uploading ? '…' : done ? '✓' : '📎'}</span>
+                    <span className="upload-text">
+                      {st?.uploading ? <>Uploading <strong>{st.name}</strong>…</>
+                        : done ? <strong>{st?.name ?? `${fieldTitle(f)} attached`}</strong>
+                        : <>Attach your {fieldTitle(f)} *</>}
+                    </span>
+                    <span className="upload-btn">{done ? 'Change file' : 'Choose file'}</span>
+                    <input
+                      ref={(el) => { accountFieldRefs.current[f.id] = el; }}
+                      className="upload-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => pickFieldFile(f, e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                );
+              })()}
+              {fieldFiles[f.id]?.error && <p className="error-msg" style={{ marginTop: 6 }}>{fieldFiles[f.id]?.error}</p>}
+              {f.helperText && <p className="field-hint">{f.helperText}</p>}
+            </div>
+          ) : (
             <div key={f.id}>
               <input
                 ref={(el) => { accountFieldRefs.current[f.id] = el; }}
@@ -756,7 +831,13 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           {customer?.email ? (
             <>
               <input ref={emailRef} className="field-input field-input-locked" type="email" value={customer.email} readOnly aria-readonly />
-              <p className="field-hint">✓ Verified email from your account. We'll send your receipt here.</p>
+              <label className="receipt-opt">
+                <input type="checkbox" checked={sendReceipt} onChange={(e) => toggleReceipt(e.target.checked)} />
+                <span>
+                  <strong>Email me a receipt</strong>
+                  <small>{sendReceipt ? "✓ Verified email from your account. We'll send your receipt here." : 'No email will be sent. You can always find this order in My Orders.'}</small>
+                </span>
+              </label>
             </>
           ) : (
             <>
@@ -782,6 +863,11 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
             </div>
           )}
 
+          {store && !store.isOpen && (
+            <p className="store-closed-note" role="status">
+              <span className="store-dot closed" aria-hidden /> <strong>We&apos;re closed right now.</strong> {store.closedMessage}
+            </p>
+          )}
           <button className="submit-btn" disabled={submitting} onClick={submitOrder}>
             {submitting ? 'Submitting...' : 'Submit Order'}
           </button>

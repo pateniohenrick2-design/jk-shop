@@ -61,6 +61,16 @@ function doPost(e) {
         lock.releaseLock();
       }
     }
+    if (body.action === 'setStatus') {
+      // Admin changed a status on the website → write it into the order's row
+      const lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try {
+        return json_({ ok: true, action: 'setStatus', results: setStatuses_(body.changes || []) });
+      } finally {
+        lock.releaseLock();
+      }
+    }
     if (body.action === 'applyStatusColors') {
       applySummaryStatusColors_(ensureSummaryTab_(SpreadsheetApp.getActiveSpreadsheet()));
       return json_({ ok: true, action: 'applyStatusColors' });
@@ -393,6 +403,59 @@ function lastDataRow_(sheet, lastCol) {
     if (data[r].some(function (c) { return c !== '' && c !== 'FALSE'; })) return r + 2;
   }
   return 1;
+}
+
+// ---------- Website → sheet status ----------
+
+// Website status → [words to look for in the cell's dropdown, word to use if there's no dropdown]
+const WEB_STATUS_WORDS = {
+  pending:     [/pending/i, 'Pending'],
+  in_progress: [/processing|progress|ongoing/i, 'Processing'],
+  reserved:    [/reserv/i, 'Reserved'],
+  friends:     [/friend/i, 'Friends'],
+  done:        [/done|deliver|success|complete|sent/i, 'Done'],
+  successful:  [/done|deliver|success|complete|sent/i, 'Done'],
+  refund:      [/refund/i, 'Refund'],
+  failed:      [/fail|cancel/i, 'Failed'],
+};
+
+// Finds each Order ID in its tab (never "All Orders") and sets that row's Status.
+// Script edits don't fire the SheetSync edit trigger, so this never bounces back to the website.
+function setStatuses_(changes) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return changes.map(function (c) {
+    const code = String(c.orderCode || '').trim();
+    const rule = WEB_STATUS_WORDS[c.status];
+    if (!code || !rule) return { orderCode: code, result: 'skipped' };
+    let updated = 0;
+    ss.createTextFinder(code).matchEntireCell(true).findAll().forEach(function (cell) {
+      const sheet = cell.getSheet();
+      if (sheet.getName() === SUMMARY_TAB || cell.getRow() < 2) return;
+      const hdrRaw = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].map(function (h) { return h.trim(); });
+      const hdr = hdrRaw.map(function (h) { return h.toLowerCase(); });
+      if (hdr[cell.getColumn() - 1] !== 'order id') return; // the code must be in the Order ID column
+      let st = hdr.indexOf('order status');
+      if (st < 0) st = hdr.indexOf('status');
+      if (st < 0) return;
+      const target = sheet.getRange(cell.getRow(), st + 1);
+      target.setValue(statusWordFor_(target, rule, hdrRaw[st]));
+      updated++;
+    });
+    return { orderCode: code, result: updated ? 'updated' : 'not found' };
+  });
+}
+
+// Picks the matching option from the cell's own dropdown (so the colour chip matches, e.g.
+// DELIVERED on event tabs). Without a dropdown: the fallback word, in the header's case style.
+function statusWordFor_(cell, rule, headerText) {
+  const dv = cell.getDataValidation();
+  if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+    const options = dv.getCriteriaValues()[0] || [];
+    for (let i = 0; i < options.length; i++) {
+      if (rule[0].test(String(options[i]))) return options[i];
+    }
+  }
+  return headerText === headerText.toUpperCase() ? rule[1].toUpperCase() : rule[1];
 }
 
 function json_(obj) {

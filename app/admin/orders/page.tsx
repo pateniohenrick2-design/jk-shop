@@ -1,56 +1,39 @@
 import { prisma } from '@/lib/prisma';
+import { ORDERS_PAGE_SIZE, adminOrderInclude, buildOrderWhere, readOrderFilters, serializeAdminOrder } from '@/lib/adminOrders';
 import OrdersClient from './OrdersClient';
 
 export const revalidate = 0;
 
-export default async function AdminOrdersPage() {
-  const [orders, games] = await Promise.all([
-    prisma.order.findMany({
-      include: {
-        game: { select: { id: true, name: true } },
-        category: { include: { fields: { orderBy: { sortOrder: 'asc' } } } },
-        item: { select: { name: true } },
-        event: { select: { name: true } },
-        paymentMethod: { select: { name: true } },
-        internalNotes: {
-          include: { admin: { select: { username: true } } },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
-    }),
+// One page (10 orders) at a time; search, game and status filters run in the database.
+// The filters live in the URL (?q=&game=&status=&page=) so Back/Refresh keep your place.
+export default async function AdminOrdersPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+  const { page: requested, ...filters } = readOrderFilters(searchParams);
+  const where = await buildOrderWhere(filters);
+
+  const [total, games] = await Promise.all([
+    prisma.order.count({ where }),
     prisma.game.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
   ]);
+  const pages = Math.max(1, Math.ceil(total / ORDERS_PAGE_SIZE));
+  const page = Math.min(requested, pages);
 
-  const serialized = orders.map((o) => ({
-    id: o.id,
-    orderCode: o.orderCode,
-    gameId: o.gameId,
-    gameName: o.game.name,
-    categoryName: o.category.name,
-    itemName: o.item?.name ?? null,
-    eventName: o.event?.name ?? null,
-    accountFields: o.category.fields.map((f) => ({
-      label: f.label,
-      value: (o.accountFields as Record<string, string> | null)?.[f.id] ?? '',
-    })),
-    quantity: o.quantity,
-    unitPrice: Number(o.unitPrice),
-    totalPrice: Number(o.totalPrice),
-    paymentMethodName: o.paymentMethod.name,
-    proofOfPaymentUrl: o.proofOfPaymentUrl,
-    facebookName: o.facebookName,
-    email: o.email,
-   status: o.status as 'pending' | 'in_progress' | 'done' | 'successful' | 'refund' | 'failed',
-    createdAt: o.createdAt.toISOString(),
-    notes: o.internalNotes.map((n) => ({
-      id: n.id,
-      text: n.noteText,
-      admin: n.admin.username,
-      createdAt: n.createdAt.toISOString(),
-    })),
-  }));
+  const orders = await prisma.order.findMany({
+    where,
+    include: adminOrderInclude,
+    orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * ORDERS_PAGE_SIZE,
+    take: ORDERS_PAGE_SIZE,
+  });
 
-  return <OrdersClient initialOrders={serialized} games={games} />;
+  return (
+    <OrdersClient
+      initialOrders={orders.map(serializeAdminOrder)}
+      games={games}
+      loadedAt={new Date().toISOString()}
+      total={total}
+      page={page}
+      pageSize={ORDERS_PAGE_SIZE}
+      filters={filters}
+    />
+  );
 }

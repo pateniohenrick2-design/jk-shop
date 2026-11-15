@@ -1,6 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { screenshotHref } from '@/lib/accountValue';
+import {
+  GENERAL_OPTIONS, GIFTING_OPTIONS, isGiftingCategory, statusBadgeClass, statusLabel, type OrderStatusValue,
+} from '@/lib/orderStatus';
+
+const POLL_MS = 10000; // how often the page checks for changes (e.g. status edits in the Google Sheet)
 
 type FieldValue = { label: string; value: string };
 type Note = { id: string; text: string; admin: string; createdAt: string };
@@ -20,18 +27,9 @@ type OrderRow = {
   proofOfPaymentUrl: string | null;
   facebookName: string | null;
   email: string | null;
- status: 'pending' | 'in_progress' | 'done' | 'successful' | 'refund' | 'failed';
+ status: OrderStatusValue;
   createdAt: string;
   notes: Note[];
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  in_progress: 'In Progress',
-  done: 'Done',
-  successful: 'Successful',
-  refund: 'Refund',
-  failed: 'Failed',
 };
 
 function shortId(id: string) {
@@ -41,35 +39,99 @@ function shortId(id: string) {
 export default function OrdersClient({
   initialOrders,
   games,
+  loadedAt,
+  total,
+  page,
+  pageSize,
+  filters,
 }: {
   initialOrders: OrderRow[];
   games: { id: string; name: string }[];
+  loadedAt: string;
+  total: number;
+  page: number;
+  pageSize: number;
+  filters: { q: string; game: string; status: string };
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Filters + page live in the URL; the server loads just that page
+  function go(next: Partial<{ q: string; game: string; status: string; page: number }>) {
+    const merged = { ...filters, page, ...next };
+    const params = new URLSearchParams();
+    if (merged.q) params.set('q', merged.q);
+    if (merged.game && merged.game !== 'all') params.set('game', merged.game);
+    if (merged.status && merged.status !== 'all') params.set('status', merged.status);
+    if (merged.page > 1) params.set('page', String(merged.page));
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
   const [orders, setOrders] = useState(initialOrders);
-  const [gameFilter, setGameFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [query, setQuery] = useState('');
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const sinceRef = useRef(loadedAt);
+
+  // A full reload from the server (new orders) replaces the list
+  useEffect(() => { setOrders(initialOrders); sinceRef.current = loadedAt; }, [initialOrders, loadedAt]);
+
+  // Live updates: every few seconds (only while the tab is visible) ask what changed since the last check.
+  // Status changes are merged in place; new orders reload the list from the server.
+  useEffect(() => {
+    let stopped = false;
+    let busy = false;
+    async function check() {
+      if (busy || stopped || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const res = await fetch(`/api/admin/order-updates?since=${encodeURIComponent(sinceRef.current)}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const body: { now: string; changed: { id: string; status: OrderRow['status'] }[]; newOrders: number } = await res.json();
+        sinceRef.current = body.now;
+        setLastSync(new Date());
+        if (body.changed.length) {
+          const map = new Map(body.changed.map((c) => [c.id, c.status]));
+          setOrders((prev) => {
+            let diff = false;
+            const next = prev.map((o) => {
+              const s = map.get(o.id);
+              if (s && s !== o.status) { diff = true; return { ...o, status: s }; }
+              return o;
+            });
+            return diff ? next : prev;
+          });
+        }
+        // New orders show up on page 1 (newest first); other pages stay put while you work
+        if (body.newOrders > 0 && page === 1) router.refresh();
+      } catch {
+        // offline for a moment: try again on the next tick
+      } finally {
+        busy = false;
+      }
+    }
+    const timer = setInterval(check, POLL_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stopped = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [router, page]);
+  const [query, setQuery] = useState(filters.q);
+  useEffect(() => { setQuery(filters.q); }, [filters.q]);
+  // Search as you type (after a short pause), starting again from page 1
+  useEffect(() => {
+    if (query.trim() === filters.q) return;
+    const t = setTimeout(() => go({ q: query.trim(), page: 1 }), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+  // Selection is per page
+  useEffect(() => { setSelected(new Set()); setExpandedId(null); }, [initialOrders]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return orders.filter((o) => {
-      if (gameFilter !== 'all' && o.gameId !== gameFilter) return false;
-      if (statusFilter !== 'all' && o.status !== statusFilter) return false;
-      if (!q) return true;
-      const haystack = [
-        (o.orderCode ?? shortId(o.id)),
-        o.facebookName ?? '',
-        o.email ?? '',
-        ...o.accountFields.map((f) => f.value),
-      ].join(' ').toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [orders, gameFilter, statusFilter, query]);
+  const filtered = orders; // already searched/filtered by the server (one page)
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -159,28 +221,23 @@ export default function OrdersClient({
   }
 
   function exportCSV() {
-    const header = ['Order', 'Game', 'Category', 'Customer Fields', 'Amount', 'Status', 'Date'];
-    const rows = filtered.map((o) => [
-      (o.orderCode ?? shortId(o.id)),
-      o.gameName,
-      o.itemName ?? o.eventName ?? o.categoryName,
-      o.accountFields.map((f) => `${f.label}: ${f.value}`).join(' | '),
-      String(o.totalPrice),
-      STATUS_LABEL[o.status],
-      new Date(o.createdAt).toLocaleDateString(),
-    ]);
-    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'orders.csv';
-    a.click();
+    // Downloads EVERY order matching the current search/filters, not just this page
+    const params = new URLSearchParams();
+    if (filters.q) params.set('q', filters.q);
+    if (filters.game !== 'all') params.set('game', filters.game);
+    if (filters.status !== 'all') params.set('status', filters.status);
+    window.location.href = `/api/admin/orders/export?${params.toString()}`;
   }
 
   return (
     <div>
       <h1 className="admin-page-title">Orders</h1>
-      <p className="field-hint">All games, filterable — update status, bulk actions, export.</p>
+      <p className="field-hint">
+        All games, filterable — update status, bulk actions, export.{' '}
+        <span className="orders-live" title="Checks for changes (e.g. from the Google Sheet) every 10 seconds">
+          <span className="orders-live-dot" /> Live{lastSync ? ` · checked ${lastSync.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}` : ''}
+        </span>
+      </p>
 
       <div className="panel">
         <div className="orders-toolbar">
@@ -190,19 +247,21 @@ export default function OrdersClient({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select className="others-sel orders-filter-sel" value={gameFilter} onChange={(e) => setGameFilter(e.target.value)}>
+          <select className="others-sel orders-filter-sel" value={filters.game} onChange={(e) => go({ game: e.target.value, page: 1 })}>
             <option value="all">All Games</option>
             {games.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
-          <select className="others-sel orders-filter-sel" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <select className="others-sel orders-filter-sel" value={filters.status} onChange={(e) => go({ status: e.target.value, page: 1 })}>
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
-            <option value="successful">Successful</option>
+            <option value="reserved">Reserved (gifting)</option>
+            <option value="friends">Friends (gifting)</option>
+            <option value="successful">Successful / Delivered</option>
             <option value="refund">Refund</option>
             <option value="failed">Failed</option>
           </select>
-          <button className="qty-btn orders-bulk-btn" onClick={exportCSV}>Export CSV</button>
+          <button className="qty-btn orders-bulk-btn" onClick={exportCSV} title="Downloads every order matching the search and filters">Export CSV ({total})</button>
         </div>
 
         <table className="admin-table">
@@ -227,6 +286,8 @@ export default function OrdersClient({
               const isExpanded = expandedId === o.id;
               const primaryField = o.accountFields[0]?.value || '—';
               const hasRush = o.notes.some((n) => /rush/i.test(n.text));
+              const gifting = isGiftingCategory(o.categoryName);
+              const options = gifting ? GIFTING_OPTIONS : GENERAL_OPTIONS;
               return (
                 <>
                   <tr key={o.id}>
@@ -237,8 +298,8 @@ export default function OrdersClient({
                     <td>{primaryField}</td>
                     <td>₱{o.totalPrice}</td>
                     <td>
-                      <span className={`badge badge-${o.status === 'in_progress' ? 'progress' : o.status}`}>
-                        {STATUS_LABEL[o.status]}
+                      <span className={statusBadgeClass(o.status)}>
+                        {statusLabel(o.status, gifting)}
                       </span>
                       {hasRush && <span className="badge badge-rush">RUSH</span>}
                     </td>
@@ -250,11 +311,10 @@ export default function OrdersClient({
                         disabled={busyId === o.id}
                         onChange={(e) => updateStatus(o.id, e.target.value)}
                       >
-                        <option value="pending">Pending</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="successful">Successful</option>
-                        <option value="refund">Refund</option>
-                        <option value="failed">Failed</option>
+                        {/* Keep the current status selectable even if it isn't one of this order type's usual choices */}
+                        {(options.includes(o.status) ? options : [o.status, ...options]).map((s) => (
+                          <option key={s} value={s}>{statusLabel(s, gifting)}</option>
+                        ))}
                       </select>
                       <button className="qty-btn orders-expand-btn" onClick={() => setExpandedId(isExpanded ? null : o.id)}>
                         {isExpanded ? 'Hide' : 'Details'}
@@ -268,7 +328,11 @@ export default function OrdersClient({
                           <div className="order-expand-col">
                             <h4>Account Details</h4>
                             {o.accountFields.map((f, i) => (
-                              <p key={i} className="order-expand-line"><strong>{f.label}:</strong> {f.value || '—'}</p>
+                              <p key={i} className="order-expand-line"><strong>{f.label}:</strong>{' '}
+                                {screenshotHref(f.value)
+                                  ? <a href={screenshotHref(f.value)!} target="_blank" rel="noopener noreferrer" className="login-link">View screenshot ↗</a>
+                                  : (f.value || '—')}
+                              </p>
                             ))}
                             <p className="order-expand-line"><strong>Payment:</strong> {o.paymentMethodName}</p>
                             <p className="order-expand-line"><strong>Facebook:</strong> {o.facebookName || '—'}</p>
@@ -314,6 +378,8 @@ export default function OrdersClient({
             })}
           </tbody>
         </table>
+
+        <Pager page={page} pages={pages} total={total} pageSize={pageSize} onGo={(p) => { go({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
       </div>
 
       {proofModalUrl && (
@@ -336,5 +402,39 @@ export default function OrdersClient({
         </div>
       )}
     </div>
+  );
+}
+
+// "Showing 11–20 of 134" + Previous · 1 … 4 5 6 … 14 · Next
+function Pager({ page, pages, total, pageSize, onGo }: { page: number; pages: number; total: number; pageSize: number; onGo: (p: number) => void }) {
+  if (total === 0) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  const nums: (number | '…')[] = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  return (
+    <nav className="orders-pager" aria-label="Orders pages">
+      <span className="orders-pager-info">Showing {from}–{to} of {total.toLocaleString('en-PH')}</span>
+      <div className="orders-pager-btns">
+        <button type="button" className="orders-page-btn" disabled={page <= 1} onClick={() => onGo(page - 1)}>‹ Previous</button>
+        {nums.map((n, i) =>
+          n === '…' ? <span key={`gap${i}`} className="orders-page-gap">…</span> : (
+            <button
+              key={n}
+              type="button"
+              className={`orders-page-btn${n === page ? ' active' : ''}`}
+              aria-current={n === page ? 'page' : undefined}
+              onClick={() => n !== page && onGo(n)}
+            >
+              {n}
+            </button>
+          ),
+        )}
+        <button type="button" className="orders-page-btn" disabled={page >= pages} onClick={() => onGo(page + 1)}>Next ›</button>
+      </div>
+    </nav>
   );
 }

@@ -8,6 +8,7 @@ import { getCustomer } from '@/lib/customerAuth';
 import { customerOrderInclude, toCustomerOrder } from '@/lib/customerOrders';
 import { renderReceipt } from '@/lib/receiptEmail';
 import { sendMail } from '@/lib/mailer';
+import { isCategoryOpen } from '@/lib/categoryAvailability';
 
 // GET /api/orders?game=&status= — used by the admin Orders view
 export async function GET(req: NextRequest) {
@@ -30,6 +31,20 @@ export async function GET(req: NextRequest) {
 // POST /api/orders — used by the customer "Submit Order" step
 export async function POST(req: NextRequest) {
   const body = await req.json();
+
+  // Category switched off or past its deadline (e.g. Pre-Order Event) — the page may have been open since before
+  if (body.categoryId) {
+    const cat = await prisma.category.findUnique({
+      where: { id: String(body.categoryId) },
+      select: { name: true, isActive: true, availableFrom: true, availableUntil: true },
+    });
+    if (cat && !isCategoryOpen(cat)) {
+      return NextResponse.json(
+        { error: `Sorry, "${cat.name}" is not available right now. Please refresh the page and choose another category.` },
+        { status: 409 },
+      );
+    }
+  }
 
   // Event delivery schedule that the admin marked sold out (the page may have been open since before)
   if (body.phaseId) {
@@ -78,6 +93,8 @@ export async function POST(req: NextRequest) {
     })(),
     (async () => {
       if (!email) return;
+      // Logged-in customers can opt out of the receipt (unchecked "Email me a receipt"); guests always get one
+      if (customer && body.sendReceipt === false) return;
       try {
         const full = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: customerOrderInclude });
         const receipt = renderReceipt(toCustomerOrder(full), {

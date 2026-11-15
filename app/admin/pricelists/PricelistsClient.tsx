@@ -18,6 +18,11 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import BulkPasteModal from "./BulkPasteModal";
+import CategoryAvailability from "./CategoryAvailability";
+import { hasAvailabilityControl } from "@/lib/categoryAvailability";
+import { itemIcon, isWideIcon } from "@/lib/itemIcons";
+import { screenshotHref } from "@/lib/accountValue";
+import { resizeIcon } from "@/lib/resizeIcon";
 import EventCategoryPanel, { type EventInfo } from "./EventCategoryPanel";
 
 type Item = {
@@ -27,6 +32,7 @@ type Item = {
   originalPrice: number | null;
   status: "available" | "sold_out";
   notes: string | null;
+  iconUrl?: string | null; // uploaded icon (missing/null = automatic icon by name)
   sortOrder: number;
 };
 
@@ -35,6 +41,9 @@ type Category = {
   name: string;
   group: "main" | "others";
   sortOrder: number;
+  isActive?: boolean;
+  availableFrom?: string | null;
+  availableUntil?: string | null;
   items: Item[];
   events?: EventInfo[];
 };
@@ -426,6 +435,81 @@ export default function PricelistsClient({
     }
   }
 
+  // --- Item icons (shown next to each item on the order page) ---
+
+  // Shrinks the picked image (keeping transparency) and uploads it; returns its URL
+  async function uploadIcon(file: File): Promise<string> {
+    const small = await resizeIcon(file);
+    const form = new FormData();
+    form.append("file", small);
+    form.append("folder", "item-icons");
+    const res = await fetch("/api/upload", { method: "POST", body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.url) throw new Error(body.error || "Upload failed.");
+    return body.url as string;
+  }
+
+  function patchItemsLocal(match: (it: Item) => boolean, change: Partial<Item>) {
+    setGames((prev) =>
+      prev.map((g) => ({
+        ...g,
+        categories: g.categories.map((c) => ({
+          ...c,
+          items: c.items.map((it) => (match(it) ? { ...it, ...change } : it)),
+        })),
+      })),
+    );
+  }
+
+  // value: a picked file (upload it), "none" (no icon at all) or "auto" (the automatic icon by name)
+  async function setItemIcon(item: Item, value: File | "none" | "auto") {
+    setBusy(true);
+    setError(null);
+    try {
+      // Stored as: URL = uploaded icon, "" = no icon, null = automatic
+      const iconUrl = value === "none" ? "" : value === "auto" ? null : await uploadIcon(value);
+      const res = await fetch(`/api/admin/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ iconUrl }),
+      });
+      if (!res.ok) throw new Error();
+      patchItemsLocal((it) => it.id === item.id, { iconUrl });
+      setNotice(
+        value === "none" ? `Icon removed from "${item.name}".`
+          : value === "auto" ? `"${item.name}" is back to its automatic icon.`
+          : `Icon updated for "${item.name}".`,
+      );
+    } catch (e) {
+      setError(e instanceof Error && e.message ? `Icon not saved: ${e.message}` : "Icon not saved. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setCategoryIcon(file: File) {
+    if (!selectedCategory) return;
+    const cat = selectedCategory;
+    setBusy(true);
+    setError(null);
+    try {
+      const iconUrl = await uploadIcon(file);
+      const res = await fetch(`/api/admin/categories/${cat.id}/icon`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ iconUrl }),
+      });
+      if (!res.ok) throw new Error();
+      const ids = new Set(cat.items.map((it) => it.id));
+      patchItemsLocal((it) => ids.has(it.id), { iconUrl });
+      setNotice(`${cat.name}: icon set for all ${cat.items.length} items. You can still change single items.`);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? `Icon not saved: ${e.message}` : "Icon not saved. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // --- Drag-and-drop reordering for games ---
 
   async function handleGameDragEnd(event: DragEndEvent) {
@@ -790,6 +874,18 @@ export default function PricelistsClient({
                         onChange={(e) => setItemQuery(e.target.value)}
                       />
                     )}
+                    {selectedCategory.items.length > 0 && (
+                      <label className={`pl-btn pl-icon-all${busy ? " disabled" : ""}`} title="Upload one icon and use it for every item in this category">
+                        Icon for all
+                        <input
+                          type="file"
+                          accept="image/png,image/webp,image/jpeg"
+                          hidden
+                          disabled={busy}
+                          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setCategoryIcon(f); }}
+                        />
+                      </label>
+                    )}
                     <button
                       className="pl-btn"
                       onClick={() => { setNotice(null); setBulkOpen(true); }}
@@ -806,6 +902,25 @@ export default function PricelistsClient({
                     </button>
                   </div>
                 </div>
+
+                {hasAvailabilityControl(selectedCategory.name) && (
+                <CategoryAvailability
+                  categoryId={selectedCategory.id}
+                  value={{
+                    isActive: selectedCategory.isActive ?? true,
+                    availableFrom: selectedCategory.availableFrom ?? null,
+                    availableUntil: selectedCategory.availableUntil ?? null,
+                  }}
+                  onSaved={(v) =>
+                    setGames((prev) =>
+                      prev.map((g) => ({
+                        ...g,
+                        categories: g.categories.map((c) => (c.id === selectedCategory.id ? { ...c, ...v } : c)),
+                      })),
+                    )
+                  }
+                />
+                )}
 
                 {addingItem && (
                   <div className="pl-add-card">
@@ -896,6 +1011,7 @@ export default function PricelistsClient({
                   <thead>
                     <tr>
                       <th style={{ width: 28 }}></th>
+                      <th style={{ width: 64 }}>Icon</th>
                       <th>Name</th>
                       <th className="pl-num">Price</th>
                       <th className="pl-num">Original</th>
@@ -907,14 +1023,14 @@ export default function PricelistsClient({
                   <tbody>
                     {selectedCategory.items.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="pl-empty-row">
+                        <td colSpan={8} className="pl-empty-row">
                           No items yet. Click <strong>+ Add Item</strong> or <strong>Bulk Paste</strong> to add some.
                         </td>
                       </tr>
                     )}
                     {selectedCategory.items.length > 0 && visibleItems.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="pl-empty-row">No items match “{itemQuery}”.</td>
+                        <td colSpan={8} className="pl-empty-row">No items match “{itemQuery}”.</td>
                       </tr>
                     )}
                     {visibleItems.length > 0 && (
@@ -945,6 +1061,11 @@ export default function PricelistsClient({
                                 onEdit={() => startEditItem(it)}
                                 onDelete={() => deleteItem(it.id)}
                                 onToggleSoldOut={() => toggleSoldOut(it)}
+                                gameSlug={selectedGame?.slug ?? ""}
+                                busy={busy}
+                                onPickIcon={(f) => setItemIcon(it, f)}
+                                onClearIcon={() => setItemIcon(it, "none")}
+                                onRestoreIcon={() => setItemIcon(it, "auto")}
                               />
                             ),
                           )}
@@ -1201,13 +1322,28 @@ function SortableItemRow({
   onEdit,
   onDelete,
   onToggleSoldOut,
+  gameSlug,
+  busy,
+  onPickIcon,
+  onClearIcon,
+  onRestoreIcon,
 }: {
   item: Item;
   dragDisabled?: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggleSoldOut: () => void;
+  gameSlug: string;
+  busy: boolean;
+  onPickIcon: (file: File) => void;
+  onClearIcon: () => void;
+  onRestoreIcon: () => void;
 }) {
+  // Uploaded icon, else the automatic one picked by name (same as the order page shows)
+  const hidden = item.iconUrl === ""; // removed on purpose
+  const uploaded = item.iconUrl ? screenshotHref(item.iconUrl) : null;
+  const auto = itemIcon(gameSlug, item.name);
+  const shown = hidden ? null : uploaded ?? auto;
   const {
     attributes,
     listeners,
@@ -1232,6 +1368,34 @@ function SortableItemRow({
             ⠿
           </button>
         )}
+      </td>
+      <td className="pl-icon-cell">
+        <div className="pl-icon-wrap">
+          <label
+            className={`pl-icon-pick${shown ? "" : " empty"}`}
+            title={uploaded ? "Click to change this icon" : auto ? "Automatic icon. Click to upload your own" : "Click to upload an icon"}
+          >
+            {shown
+              ? <img src={shown} alt="" className={!uploaded && isWideIcon(shown) ? "wide" : ""} />
+              : <span aria-hidden>＋</span>}
+            <input
+              type="file"
+              accept="image/png,image/webp,image/jpeg"
+              hidden
+              disabled={busy}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onPickIcon(f); }}
+            />
+          </label>
+        </div>
+        {shown ? (
+          <button className="pl-icon-remove" title="Remove this icon (no icon on the order page)" aria-label={`Remove icon of ${item.name}`} disabled={busy} onClick={onClearIcon}>
+            Remove
+          </button>
+        ) : hidden && auto ? (
+          <button className="pl-icon-remove pl-icon-restore" title="Use the automatic icon again" disabled={busy} onClick={onRestoreIcon}>
+            Restore
+          </button>
+        ) : null}
       </td>
       <td className="pl-name">{item.name}</td>
       <td className="pl-num pl-price">₱{item.price.toLocaleString()}</td>
@@ -1277,6 +1441,7 @@ function ItemEditRow({
 }) {
   return (
     <tr>
+      <td></td>
       <td></td>
       <td>
         <input

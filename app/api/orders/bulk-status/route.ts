@@ -2,6 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth';
+import { isOrderStatus } from '@/lib/orderStatus';
+import { waitUntil } from '@vercel/functions';
+import { sendStatusToSheet } from '@/lib/gsheet';
 
 export async function PATCH(req: NextRequest) {
   const token = cookies().get(COOKIE_NAME)?.value;
@@ -12,7 +15,7 @@ export async function PATCH(req: NextRequest) {
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
     return NextResponse.json({ error: 'No orders selected' }, { status: 400 });
   }
-  if (!['pending', 'in_progress', 'done', 'successful', 'refund', 'failed'].includes(status)) {
+  if (!isOrderStatus(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 
@@ -29,6 +32,11 @@ export async function PATCH(req: NextRequest) {
       })),
     }),
   ]);
+
+  // Mirror the changes in the Google Sheet after responding
+  waitUntil(sendStatusToSheet(
+    existingOrders.filter((o) => o.orderCode && o.status !== status).map((o) => ({ orderCode: o.orderCode as string, status })),
+  ));
 
   return NextResponse.json({ ok: true, updated: existingOrders.length });
 }

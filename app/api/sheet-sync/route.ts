@@ -9,6 +9,9 @@ import { prisma } from '@/lib/prisma';
 // Sheet wording → website status (case-insensitive, first match wins — same words as the sheet colours)
 const STATUS_RULES: [RegExp, OrderStatus][] = [
   [/refund/i, 'refund'],
+  // Event Skin Gifting tabs: PENDING / RESERVED / FRIENDS / DELIVERED / FAILED
+  [/reserv/i, 'reserved'],
+  [/friend/i, 'friends'],
   [/fail|cancel|invalid|wrong/i, 'failed'],
   // The website's "finished" status is Successful, so Done/Sent/Delivered all land there
   [/success|complete|done|deliver|\bsent\b/i, 'successful'],

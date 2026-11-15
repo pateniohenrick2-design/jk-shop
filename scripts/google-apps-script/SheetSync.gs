@@ -17,7 +17,8 @@
  *
  * Sheet words → website status:
  *   Pending/Unpaid → Pending · Processing/In progress → In Progress
- *   Done/Sent/Delivered/Success/Complete → Successful · Refund → Refund · Failed/Cancelled → Failed
+ *   Done/Sent/Delivered/Success/Complete → Successful
+ *   Event Skin Gifting: RESERVED → Reserved · FRIENDS → Friends · Refund → Refund · Failed/Cancelled → Failed
  */
 
 const SITE_URL = 'https://jkshopph.vercel.app';

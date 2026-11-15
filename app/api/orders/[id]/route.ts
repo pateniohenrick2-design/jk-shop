@@ -2,6 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth';
+import { isOrderStatus } from '@/lib/orderStatus';
+import { waitUntil } from '@vercel/functions';
+import { sendStatusToSheet } from '@/lib/gsheet';
 
 // PATCH /api/orders/:id — status update, logs to OrderStatusHistory
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -10,7 +13,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { status } = await req.json();
-  if (!['pending', 'in_progress', 'done', 'successful', 'refund', 'failed'].includes(status)) {
+  if (!isOrderStatus(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 
@@ -23,6 +26,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data: { orderId: params.id, oldStatus: existing.status, newStatus: status, adminId: session.adminId },
     }),
   ]);
+
+  // Mirror the change in the Google Sheet after responding (never blocks or fails the admin's change)
+  if (updated.orderCode && existing.status !== status) waitUntil(sendStatusToSheet([{ orderCode: updated.orderCode, status }]));
 
   return NextResponse.json(updated);
 }

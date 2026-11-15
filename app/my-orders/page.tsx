@@ -7,12 +7,14 @@ import Footer from '@/components/Footer';
 import { supabase } from '@/lib/supabase';
 import { useCustomer } from '@/lib/useCustomer';
 import type { CustomerOrder } from '@/lib/customerOrders';
+import { screenshotHref } from '@/lib/accountValue';
+import { customerStatusLabel, isGiftingCategory, statusBadgeClass } from '@/lib/orderStatus';
 
 const peso = (n: number) => `₱${n.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-// Order details only — status is managed by the shop in the Google Sheet, not shown to customers.
+// Order details + status (updated by the shop from the Google Sheet or the admin).
 function OrderCard({ o }: { o: CustomerOrder }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -29,6 +31,7 @@ function OrderCard({ o }: { o: CustomerOrder }) {
         </button>
         <span className="to-date">{when(o.createdAt)}</span>
       </div>
+      <span className={`${statusBadgeClass(o.status)} to-status`}>{customerStatusLabel(o.status, isGiftingCategory(o.category))}</span>
 
       <h3 className="to-item">
         {o.item}{o.quantity > 1 && <span> × {o.quantity}</span>}
@@ -38,7 +41,9 @@ function OrderCard({ o }: { o: CustomerOrder }) {
       {o.account.length > 0 && (
         <dl className="to-account">
           {o.account.map((a) => (
-            <div key={a.label}><dt>{a.label}</dt><dd>{a.value}</dd></div>
+            <div key={a.label}><dt>{a.label}</dt><dd>{screenshotHref(a.value)
+              ? <a href={screenshotHref(a.value)!} target="_blank" rel="noopener noreferrer">View screenshot ↗</a>
+              : a.value}</dd></div>
           ))}
         </dl>
       )}
@@ -57,12 +62,23 @@ function MyOrders() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [search, setSearch] = useState(''); // the query actually sent (after a short typing pause)
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ total: 0, pages: 1, pageSize: 10 });
+
+  const url = (p: number, q: string) => `/api/my-orders?page=${p}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+
+  // Search after the customer stops typing, from page 1
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(query.trim()); setPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const load = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     const request = (token?: string) =>
-      fetch('/api/my-orders', { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
+      fetch(url(page, search), { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
     try {
       const { data } = await supabase.auth.getSession();
       let res = await request(data.session?.access_token);
@@ -75,6 +91,8 @@ function MyOrders() {
       if (!res.ok) throw new Error(body.error || `Could not load your orders (error ${res.status}). Please tap Refresh.`);
       if (!Array.isArray(body.orders)) throw new Error('Could not load your orders (unexpected reply). Please tap Refresh.');
       setOrders(body.orders);
+      setMeta({ total: body.total ?? body.orders.length, pages: body.pages ?? 1, pageSize: body.pageSize ?? 10 });
+      if (body.page && body.page !== page) setPage(body.page);
     } catch (e: any) {
       // Network failures ("Failed to fetch" / "Load failed") get a clearer message
       const msg = e?.message && !/failed to fetch|load failed|network/i.test(e.message)
@@ -84,14 +102,37 @@ function MyOrders() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  const q = query.trim().toLowerCase();
-  const shown = (orders ?? []).filter(
-    (o) => !q || o.orderCode.toLowerCase().includes(q) || o.item.toLowerCase().includes(q) || o.game.toLowerCase().includes(q),
-  );
+  // Statuses change while the page is open (the shop updates them): re-check every 30s
+  // while the tab is visible, and right away when the customer comes back to it.
+  useEffect(() => {
+    const quiet = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const res = await fetch(url(page, search), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (Array.isArray(body.orders)) {
+          setOrders(body.orders);
+          setMeta({ total: body.total ?? body.orders.length, pages: body.pages ?? 1, pageSize: body.pageSize ?? 10 });
+        }
+      } catch { /* offline for a moment: next tick retries */ }
+    };
+    const t = setInterval(quiet, 30_000);
+    const onVisible = () => { if (document.visibilityState === 'visible') quiet(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search]);
+
+  const shown = orders ?? []; // this page, already searched by the server
+  const goPage = (p: number) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   return (
     <>
@@ -107,23 +148,35 @@ function MyOrders() {
 
       {orders === null && !error && <div className="to-empty">Loading your orders…</div>}
 
-      {orders && orders.length === 0 && (
+      {orders && orders.length === 0 && !search && (
         <div className="to-empty">
           <p>You don’t have any orders yet.</p>
           <Link href="/" className="auth-login-btn">Browse games</Link>
         </div>
       )}
 
-      {orders && orders.length > 0 && (
+      {orders && (orders.length > 0 || !!search) && (
         <>
           <div className="to-toolbar">
-            <span className="to-count">{orders.length} order{orders.length === 1 ? '' : 's'}</span>
+            <span className="to-count">{meta.total} order{meta.total === 1 ? '' : 's'}{search ? ` matching “${search}”` : ''}</span>
             <input className="pl-search" type="search" placeholder="Search Order ID or item…" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
           {shown.length === 0 ? (
             <div className="to-empty">No orders match “{query}”.</div>
           ) : (
             <div className="to-list">{shown.map((o) => <OrderCard key={o.orderCode} o={o} />)}</div>
+          )}
+          {meta.pages > 1 && (
+            <nav className="orders-pager" aria-label="Order pages">
+              <span className="orders-pager-info">
+                Showing {(page - 1) * meta.pageSize + 1}–{Math.min(meta.total, page * meta.pageSize)} of {meta.total}
+              </span>
+              <div className="orders-pager-btns">
+                <button type="button" className="orders-page-btn" disabled={page <= 1 || refreshing} onClick={() => goPage(page - 1)}>‹ Previous</button>
+                <span className="orders-pager-info">Page {page} of {meta.pages}</span>
+                <button type="button" className="orders-page-btn" disabled={page >= meta.pages || refreshing} onClick={() => goPage(page + 1)}>Next ›</button>
+              </div>
+            </nav>
           )}
         </>
       )}

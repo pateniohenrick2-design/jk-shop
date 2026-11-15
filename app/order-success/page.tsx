@@ -16,6 +16,7 @@ type LastOrder = {
   paymentMethod: string;
   email: string;
   loggedIn: boolean;
+  receiptSent?: boolean; // false when a logged-in customer unticked "Email me a receipt"
 };
 
 const REDIRECT_SECONDS = 15;
@@ -86,7 +87,7 @@ function SuccessInner() {
           </dl>
         )}
 
-        {order?.email && (
+        {order?.email && order.receiptSent !== false && (
           <p className="os-email">📧 A receipt was sent to <strong>{order.email}</strong>. Check your spam folder if you don’t see it.</p>
         )}
 

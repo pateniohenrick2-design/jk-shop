@@ -70,3 +70,11 @@ export async function ensureEventSheet(eventName: string): Promise<void> {
   if (!eventName.trim()) return;
   await callSheet({ action: 'ensureEventTab', eventName }, `event tab "${eventName}"`);
 }
+
+// Admin changed a status on the website → write it into the order's row in the sheet
+// (handled by the 'setStatus' action in OrdersWebhook.gs). status = website value, e.g. "in_progress".
+export async function sendStatusToSheet(changes: { orderCode: string; status: string }[]): Promise<void> {
+  const list = changes.filter((c) => c.orderCode);
+  if (list.length === 0) return;
+  await callSheet({ action: 'setStatus', changes: list }, `status for ${list.length} order(s)`);
+}

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAdminSession } from '@/lib/adminSession';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await getAdminSession())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await req.json();
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) data.name = body.name;
@@ -10,6 +12,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.status !== undefined) data.status = body.status;
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+  if (body.iconUrl !== undefined) {
+    // null = automatic icon, "" = no icon, URL = uploaded icon
+    if (body.iconUrl !== null && body.iconUrl !== '' && (typeof body.iconUrl !== 'string' || !/^https?:\/\//.test(body.iconUrl))) {
+      return NextResponse.json({ error: 'Invalid icon URL' }, { status: 400 });
+    }
+    data.iconUrl = body.iconUrl;
+  }
 
   const item = await prisma.pricelistItem.update({ where: { id: params.id }, data });
   return NextResponse.json(item);
