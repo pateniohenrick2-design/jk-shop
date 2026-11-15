@@ -12,7 +12,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = token ? await verifySessionToken(token) : null;
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { status } = await req.json();
+  const { status, supplier } = await req.json();
+  // PROCESS button: which top-up site was used (written to the sheet's Supplier column if empty)
+  const supplierName = typeof supplier === 'string' ? supplier.trim().slice(0, 60) : '';
   if (!isOrderStatus(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
@@ -28,7 +30,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   ]);
 
   // Mirror the change in the Google Sheet after responding (never blocks or fails the admin's change)
-  if (updated.orderCode && existing.status !== status) waitUntil(sendStatusToSheet([{ orderCode: updated.orderCode, status }]));
+  if (updated.orderCode && (existing.status !== status || supplierName)) {
+    waitUntil(sendStatusToSheet([{ orderCode: updated.orderCode, status, ...(supplierName ? { supplier: supplierName } : {}) }]));
+  }
 
   return NextResponse.json(updated);
 }

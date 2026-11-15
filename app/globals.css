@@ -1338,3 +1338,45 @@ button.btn-ghost { background: none; cursor: pointer; font-family: inherit; }
   .dash-range-btn { padding: 6px 12px; font-size: 12.5px; }
   .dash-range-note { flex-basis: 100%; margin: 4px 0 0; }
 }
+
+/* Admin Orders: PROCESS (top-up site) */
+/* same size as the Details button next to it */
+.orders-process-btn { width: auto; height: auto; padding: 6px 12px; font-size: 12px; margin-right: 6px; background: var(--accent); color: #0a0f0a; border-color: var(--accent); font-weight: 700; }
+.orders-process-btn:hover { filter: brightness(1.08); }
+.process-modal { max-width: 420px; text-align: left; }
+.process-info { background: #1b261b; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+.process-info .muted { color: var(--muted); }
+.process-ask { margin: 0 0 8px; font-size: 13px; }
+.process-sites { display: flex; gap: 10px; flex-wrap: wrap; }
+.process-site-btn { flex: 1 1 140px; text-align: center; padding: 12px 8px; border-radius: 10px; background: #1F3A1F; color: #B7F5A4; font-weight: 800; }
+.process-site-btn:hover { background: #2E5A2E; }
+.process-msg { margin: 10px 0 0; }
+
+/* Order form: several proof-of-payment files */
+.proof-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.proof-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(169,201,160,.08); border: 1px solid var(--border); }
+.proof-item.proof-error { border-color: rgba(224,138,138,.5); background: rgba(224,138,138,.08); }
+.proof-state { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: rgba(169,201,160,.18); color: var(--accent); font-weight: 900; font-size: 13px; }
+.proof-done .proof-state { background: var(--accent); color: #0a0f0a; }
+.proof-error .proof-state { background: #e08a8a; color: #2a0f0f; }
+.proof-name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.proof-name strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proof-name small { font-size: 11.5px; color: var(--muted); }
+.proof-error .proof-name small { color: #e08a8a; }
+.proof-remove { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+.proof-remove:hover { color: #e08a8a; background: rgba(224,138,138,.1); }
+.upload-box-more { padding: 14px 16px; flex-direction: row; justify-content: space-between; text-align: left; }
+.upload-box-more .upload-icon { width: 32px; height: 32px; }
+
+/* Admin: proof viewer with several images */
+.proof-count { color: var(--muted); font-weight: 600; font-size: 14px; }
+.proof-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 26px; line-height: 1; z-index: 2; }
+.proof-nav.prev { left: 6px; }
+.proof-nav.next { right: 6px; }
+.proof-nav:hover { background: rgba(0,0,0,.8); }
+.proof-thumbs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.proof-thumb { width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 2px solid transparent; padding: 0; background: #fff; cursor: pointer; opacity: .65; }
+.proof-thumb.active { border-color: var(--accent); opacity: 1; }
+.proof-thumb img { width: 100%; height: 100%; object-fit: cover; margin: 0; padding: 0; border-radius: 0; max-width: none; }

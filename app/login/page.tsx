@@ -17,8 +17,8 @@ type VerifyType = 'email' | 'signup' | 'recovery';
 
 const RESEND_SECONDS = 60;
 const MIN_PASSWORD = 8;
-// Must match Supabase → Authentication → Email → "Email OTP Length" (currently 8)
-const OTP_LENGTH = Number(process.env.NEXT_PUBLIC_OTP_LENGTH || 8);
+// Must match Supabase → Authentication → Providers → Email → "Email OTP Length" (6)
+const OTP_LENGTH = Number(process.env.NEXT_PUBLIC_OTP_LENGTH || 6);
 
 // Turns Supabase's technical errors into something a customer understands
 function friendlyError(msg: string) {

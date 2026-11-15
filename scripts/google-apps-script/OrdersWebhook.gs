@@ -439,6 +439,12 @@ function setStatuses_(changes) {
       if (st < 0) return;
       const target = sheet.getRange(cell.getRow(), st + 1);
       target.setValue(statusWordFor_(target, rule, hdrRaw[st]));
+      // Website PROCESS button: note which top-up site was used (only if Supplier is still empty)
+      const sup = hdr.indexOf('supplier');
+      if (c.supplier && sup >= 0) {
+        const supCell = sheet.getRange(cell.getRow(), sup + 1);
+        if (!supCell.getDisplayValue()) supCell.setValue(String(c.supplier));
+      }
       updated++;
     });
     return { orderCode: code, result: updated ? 'updated' : 'not found' };

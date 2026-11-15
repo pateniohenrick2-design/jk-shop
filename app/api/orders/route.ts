@@ -9,6 +9,7 @@ import { customerOrderInclude, toCustomerOrder } from '@/lib/customerOrders';
 import { renderReceipt } from '@/lib/receiptEmail';
 import { sendMail } from '@/lib/mailer';
 import { isCategoryOpen } from '@/lib/categoryAvailability';
+import { joinProofs, splitProofs } from '@/lib/proofs';
 
 // GET /api/orders?game=&status= — used by the admin Orders view
 export async function GET(req: NextRequest) {
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
       unitPrice: body.unitPrice,
       totalPrice: body.unitPrice * (body.quantity ?? 1),
       paymentMethodId: body.paymentMethodId,
-      proofOfPaymentUrl: body.proofOfPaymentUrl,
+      // One or more proof images, one URL per line (see lib/proofs.ts)
+      proofOfPaymentUrl: joinProofs(splitProofs(typeof body.proofOfPaymentUrl === 'string' ? body.proofOfPaymentUrl : '').filter((u) => /^https:\/\//i.test(u))),
       facebookName: body.facebookName,
       email,
       customerId: customer?.id ?? null,

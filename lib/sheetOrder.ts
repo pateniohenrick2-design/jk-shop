@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { splitProofs } from '@/lib/proofs';
 import type { SheetOrder } from '@/lib/gsheet';
 
 const peso = (n: number) => `₱${n.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
@@ -46,13 +47,13 @@ export async function buildSheetOrder(
     orderDetails = `${hero?.heroName ?? item}${phase ? ` (${phase.phaseName})` : ''} – ${peso(unitPrice)}`;
   }
 
-  // Proof link the shop owner can open even where *.r2.dev is blocked: route it through our proxy
-  let proofUrl = order.proofOfPaymentUrl ?? '';
+  // Proof links the shop owner can open even where *.r2.dev is blocked: route them through our proxy.
+  // Several proofs → one link per line in the sheet's Proof cell.
   const r2Public = process.env.R2_PUBLIC_URL;
-  if (proofUrl && r2Public && proofUrl.startsWith(r2Public)) {
-    const site = (process.env.SITE_URL || opts.origin || '').replace(/\/$/, '');
-    proofUrl = `${site}/api/image-proxy?key=${encodeURIComponent(proofUrl.slice(r2Public.length + 1))}`;
-  }
+  const site = (process.env.SITE_URL || opts.origin || '').replace(/\/$/, '');
+  const proofUrl = splitProofs(order.proofOfPaymentUrl)
+    .map((u) => (r2Public && u.startsWith(r2Public) ? `${site}/api/image-proxy?key=${encodeURIComponent(u.slice(r2Public.length + 1))}` : u))
+    .join('\n');
 
   return {
     orderId: order.id,

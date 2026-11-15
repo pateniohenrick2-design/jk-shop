@@ -1,42 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getAdminSession } from '@/lib/adminSession';
+import { splitProofs } from '@/lib/proofs';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const order = await prisma.order.findUnique({
-    where: { id: params.id },
-    select: { proofOfPaymentUrl: true },
-  });
+// GET /api/orders/:id/proof-url → { url, urls } — viewable links for every proof-of-payment image
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await getAdminSession())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!order || !order.proofOfPaymentUrl) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  }
+  const order = await prisma.order.findUnique({ where: { id: params.id }, select: { proofOfPaymentUrl: true } });
+  const proofs = splitProofs(order?.proofOfPaymentUrl);
+  if (proofs.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // New orders (uploaded via R2) store a full public .r2.dev URL.
-  // Some ISPs block .r2.dev directly, so we route the browser through
-  // our own /api/image-proxy instead of returning the raw R2 link.
-  if (order.proofOfPaymentUrl.startsWith('http://') || order.proofOfPaymentUrl.startsWith('https://')) {
-    const r2PublicUrl = process.env.R2_PUBLIC_URL!;
-    if (order.proofOfPaymentUrl.startsWith(r2PublicUrl)) {
-      const key = order.proofOfPaymentUrl.slice(r2PublicUrl.length + 1); // strip base + leading slash
-      return NextResponse.json({ url: `/api/image-proxy?key=${encodeURIComponent(key)}` });
+  const r2PublicUrl = process.env.R2_PUBLIC_URL;
+  const urls: string[] = [];
+  for (const p of proofs) {
+    if (p.startsWith('http://') || p.startsWith('https://')) {
+      // R2 links go through our own /api/image-proxy (some ISPs block .r2.dev)
+      if (r2PublicUrl && p.startsWith(r2PublicUrl)) {
+        urls.push(`/api/image-proxy?key=${encodeURIComponent(p.slice(r2PublicUrl.length + 1))}`);
+      } else {
+        urls.push(p);
+      }
+      continue;
     }
-    // Some other full URL (not R2) — return as-is
-    return NextResponse.json({ url: order.proofOfPaymentUrl });
+    // Old orders (before the R2 migration) store a Supabase Storage path — sign it (5 min)
+    const { data } = await supabaseAdmin.storage.from('proof-of-payments').createSignedUrl(p, 60 * 5);
+    if (data?.signedUrl) urls.push(data.signedUrl);
   }
-
-  // Old orders (uploaded before the R2 migration) still store a
-  // Supabase Storage PATH — sign it as before.
-  const { data, error } = await supabaseAdmin.storage
-    .from('proof-of-payments') // <-- keep as your actual bucket name
-    .createSignedUrl(order.proofOfPaymentUrl, 60 * 5); // 5 min expiry
-
-  if (error || !data) {
-    return NextResponse.json({ error: 'Could not sign URL' }, { status: 500 });
-  }
-
-  return NextResponse.json({ url: data.signedUrl });
+  if (urls.length === 0) return NextResponse.json({ error: 'Could not sign URL' }, { status: 500 });
+  return NextResponse.json({ url: urls[0], urls });
 }

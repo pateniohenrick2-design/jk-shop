@@ -11,6 +11,7 @@ import { normalizeLabel, savedAccountName, type SavedAccount } from '@/lib/saved
 import { itemIcon, isWideIcon } from '@/lib/itemIcons';
 import { screenshotHref } from '@/lib/accountValue';
 import { isSoldOut } from '@/lib/manilaDate';
+import { MAX_PROOFS, joinProofs } from '@/lib/proofs';
 import { useStoreSettings } from '@/lib/useStoreSettings';
 
 type Item = { id: string; name: string; price: number; status: string; iconUrl?: string | null };
@@ -119,8 +120,9 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   // Screenshot fields: picked file name + upload state (the uploaded URL goes into accountValues)
   const [fieldFiles, setFieldFiles] = useState<Record<string, { name: string; uploading: boolean; error?: string }>>({});
   const [paymentId, setPaymentId] = useState<string>(paymentMethods[0]?.id ?? '');
-  const [proofFileName, setProofFileName] = useState<string>('');
-  const [proofFile, setProofFile] = useState<File | null>(null);
+  // Proof of payment: up to MAX_PROOFS images, each uploaded in the background as soon as it's picked
+  type Proof = { id: string; name: string; promise: Promise<string>; state: 'uploading' | 'done' | 'error'; error?: string };
+  const [proofs, setProofs] = useState<Proof[]>([]);
   const [qrPayment, setQrPayment] = useState<PaymentMethod | null>(null);
   const [copiedId, setCopiedId] = useState('');
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -271,9 +273,6 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
     setPhaseId('');
   }
 
-  // Proof of payment is compressed + uploaded in the background as soon as it's picked,
-  // so Submit only has to wait for it if it hasn't finished yet.
-  const proofUploadRef = useRef<{ file: File; promise: Promise<string> } | null>(null);
 
   async function uploadImage(file: File, failMsg: string): Promise<string> {
     const compressed = await compressImage(file);
@@ -304,13 +303,24 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
     }
   }
 
-  function getProofUpload(file: File): Promise<string> {
-    if (proofUploadRef.current?.file === file) return proofUploadRef.current.promise;
-    const promise = uploadImage(file, 'Failed to upload proof of payment. Please try again.');
-    promise.catch(() => { /* reported on Submit */ });
-    proofUploadRef.current = { file, promise };
-    return promise;
+  // Adds picked files (up to MAX_PROOFS in total) and starts uploading each one right away
+  function addProofs(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = MAX_PROOFS - proofs.length;
+    const picked = Array.from(files).slice(0, Math.max(0, room));
+    const added: Proof[] = picked.map((file) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const promise = uploadImage(file, 'Failed to upload proof of payment. Please try again.');
+      promise.then(
+        () => setProofs((list) => list.map((p) => (p.id === id ? { ...p, state: 'done' } : p))),
+        (err) => setProofs((list) => list.map((p) => (p.id === id ? { ...p, state: 'error', error: err instanceof Error ? err.message : 'Upload failed' } : p))),
+      );
+      return { id, name: file.name, promise, state: 'uploading' };
+    });
+    setProofs((list) => [...list, ...added]);
+    if (files.length > room) setResult({ ok: false, msg: `You can attach up to ${MAX_PROOFS} files. Only the first ${Math.max(0, room)} were added.` });
   }
+  const removeProof = (id: string) => setProofs((list) => list.filter((p) => p.id !== id));
 
   // Load the confirmation page ahead of time so the jump after Submit is instant
   useEffect(() => { router.prefetch('/order-success'); }, [router]);
@@ -347,8 +357,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
       setResult({ ok: false, msg: 'Please choose a payment method.' });
       return goTo(paymentPanelRef.current);
     }
-    if (!proofFileName) {
+    if (proofs.length === 0) {
       setResult({ ok: false, msg: 'Please attach your proof of payment.' });
+      return goTo(proofPanelRef.current);
+    }
+    if (proofs.some((p) => p.state === 'error')) {
+      setResult({ ok: false, msg: 'One of your proof files failed to upload. Remove it (✕) and attach it again.' });
       return goTo(proofPanelRef.current);
     }
     if (!facebookName.trim()) {
@@ -368,19 +382,16 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
     setResult(null);
     try {
       let proofPath: string | null = null;
-      if (proofFile) {
-        try {
-          // Usually already finished: the upload starts as soon as the file is picked
-          proofPath = await getProofUpload(proofFile);
-        } catch (uploadErr) {
-          proofUploadRef.current = null; // let the next Submit retry the upload
-          setResult({
-            ok: false,
-            msg: uploadErr instanceof Error && uploadErr.message ? uploadErr.message : 'Failed to upload proof of payment. Please try again.',
-          });
-          setSubmitting(false);
-          return;
-        }
+      try {
+        // Usually already finished: each upload starts as soon as the file is picked
+        proofPath = joinProofs(await Promise.all(proofs.map((p) => p.promise)));
+      } catch (uploadErr) {
+        setResult({
+          ok: false,
+          msg: uploadErr instanceof Error && uploadErr.message ? `${uploadErr.message} Remove the failed file (✕) and attach it again.` : 'Failed to upload proof of payment. Please try again.',
+        });
+        setSubmitting(false);
+        return;
       }
 
       // Send the login token so the server can confirm the email is the customer's verified one
@@ -803,24 +814,38 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
         <div className="panel step-proof" ref={proofPanelRef}>
           <div className="panel-head"><span className="step-num">{stepProof}</span><h2>Proof of Payment</h2></div>
-          <label className={`upload-box${proofFileName ? ' upload-box-done' : ''}`}>
-            <span className="upload-icon" aria-hidden>{proofFileName ? '✓' : '📎'}</span>
-            <span className="upload-text">
-              {proofFileName ? <strong>{proofFileName}</strong> : 'Attach your receipt or screenshot of payment'}
-            </span>
-            <span className="upload-btn">{proofFileName ? 'Change file' : 'Choose file'}</span>
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const f = e.target.files?.[0] ?? null;
-                setProofFile(f);
-                setProofFileName(f?.name ?? '');
-                if (f) getProofUpload(f); // start uploading now, in the background
-              }}
-            />
-          </label>
+          {proofs.length > 0 && (
+            <ul className="proof-list">
+              {proofs.map((p, i) => (
+                <li key={p.id} className={`proof-item proof-${p.state}`}>
+                  <span className="proof-state" aria-hidden>{p.state === 'done' ? '✓' : p.state === 'error' ? '!' : '…'}</span>
+                  <span className="proof-name">
+                    <strong>{i + 1}. {p.name}</strong>
+                    <small>{p.state === 'done' ? 'Uploaded' : p.state === 'error' ? (p.error || 'Upload failed') : 'Uploading…'}</small>
+                  </span>
+                  <button type="button" className="proof-remove" aria-label={`Remove ${p.name}`} onClick={() => removeProof(p.id)}>✕</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {proofs.length < MAX_PROOFS && (
+            <label className={`upload-box${proofs.length ? ' upload-box-more' : ''}`}>
+              <span className="upload-icon" aria-hidden>{proofs.length ? '＋' : '📎'}</span>
+              <span className="upload-text">
+                {proofs.length
+                  ? `Add another screenshot (${proofs.length}/${MAX_PROOFS})`
+                  : `Attach your receipt or screenshot of payment. You can add up to ${MAX_PROOFS}.`}
+              </span>
+              <span className="upload-btn">{proofs.length ? 'Add file' : 'Choose files'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => { addProofs(e.target.files); e.target.value = ''; }}
+              />
+            </label>
+          )}
           <p className="field-hint" style={{ color: '#e0c26a', marginTop: 8 }}>NO RECEIPT = NO PROCESS</p>
         </div>
 

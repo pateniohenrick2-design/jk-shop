@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { screenshotHref } from '@/lib/accountValue';
+import { SUPPLIER_SITES, canProcessOnSupplier, supplierLink } from '@/lib/supplierSites';
+import { splitProofs } from '@/lib/proofs';
 import {
   GENERAL_OPTIONS, GIFTING_OPTIONS, isGiftingCategory, statusBadgeClass, statusLabel, type OrderStatusValue,
 } from '@/lib/orderStatus';
@@ -130,6 +132,9 @@ export default function OrdersClient({
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+  const [proofList, setProofList] = useState<string[]>([]); // all proof images of the open order
+  const [processing, setProcessing] = useState<OrderRow | null>(null); // PROCESS dialog
+  const [processMsg, setProcessMsg] = useState<string | null>(null);
 
   const filtered = orders; // already searched/filtered by the server (one page)
 
@@ -166,6 +171,28 @@ export default function OrdersClient({
     }
   }
 
+  // PROCESS (same as the sheet's button): open the top-up site with the order pre-filled
+  // (Tampermonkey fills it in), set the order to In Progress and tell the sheet which site was used.
+  function accountValue(o: OrderRow, re: RegExp) {
+    return o.accountFields.find((f) => re.test(f.label))?.value ?? '';
+  }
+  async function markProcessing(o: OrderRow, site: string) {
+    setProcessMsg(`Opening ${site}…`);
+    try {
+      const res = await fetch(`/api/orders/${o.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'in_progress', supplier: site }),
+      });
+      if (!res.ok) throw new Error();
+      setOrders((prev) => prev.map((x) => (x.id === o.id ? { ...x, status: 'in_progress' } : x)));
+      setProcessing(null);
+      setProcessMsg(null);
+    } catch {
+      setProcessMsg(`${site} opened, but the status could not be updated. Set it to In Progress by hand.`);
+    }
+  }
+
   async function bulkUpdate(status: string) {
     if (selected.size === 0) return;
     const orderIds = Array.from(selected);
@@ -190,6 +217,7 @@ export default function OrdersClient({
       const res = await fetch(`/api/orders/${id}/proof-url`);
       if (!res.ok) throw new Error();
       const data = await res.json();
+      setProofList(Array.isArray(data.urls) && data.urls.length ? data.urls : [data.url]);
       setProofModalUrl(data.url);
     } catch {
       alert('Could not load proof of payment.');
@@ -316,6 +344,12 @@ export default function OrdersClient({
                           <option key={s} value={s}>{statusLabel(s, gifting)}</option>
                         ))}
                       </select>
+                      {/* Only orders still waiting to be topped up */}
+                      {canProcessOnSupplier(o) && (o.status === 'pending' || o.status === 'in_progress') && (
+                        <button className="qty-btn orders-process-btn" title="Open a top-up site with this order filled in" onClick={() => { setProcessMsg(null); setProcessing(o); }}>
+                          Process
+                        </button>
+                      )}
                       <button className="qty-btn orders-expand-btn" onClick={() => setExpandedId(isExpanded ? null : o.id)}>
                         {isExpanded ? 'Hide' : 'Details'}
                       </button>
@@ -339,7 +373,7 @@ export default function OrdersClient({
                             <p className="order-expand-line"><strong>Email:</strong> {o.email || '—'}</p>
                             {o.proofOfPaymentUrl && (
                               <button className="qty-btn" style={{ width: 'auto', padding: '8px 14px', marginTop: 4 }} onClick={() => viewProof(o.id)}>
-                                View Proof of Payment
+                                View Proof of Payment{splitProofs(o.proofOfPaymentUrl).length > 1 ? ` (${splitProofs(o.proofOfPaymentUrl).length})` : ''}
                               </button>
                             )}
                           </div>
@@ -382,6 +416,54 @@ export default function OrdersClient({
         <Pager page={page} pages={pages} total={total} pageSize={pageSize} onGo={(p) => { go({ page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
       </div>
 
+      {processing && (() => {
+        const o = processing;
+        const userId = accountValue(o, /user\s*id|^id$/i);
+        const serverId = accountValue(o, /server|zone/i);
+        const ign = accountValue(o, /ign|in.?game|name/i);
+        const item = o.itemName ?? '';
+        const missing = !userId || !serverId.replace(/\D/g, '');
+        return (
+          <div className="qr-modal-overlay" onClick={() => setProcessing(null)}>
+            <div className="qr-modal process-modal" role="dialog" aria-modal="true" aria-labelledby="process-title" onClick={(e) => e.stopPropagation()}>
+              <h3 id="process-title">Process order</h3>
+              <div className="process-info">
+                <strong>{o.orderCode ?? shortId(o.id)}</strong>{ign && <> · {ign}</>}<br />
+                {userId || '—'} ({serverId || '—'}) — <strong>{item}</strong><br />
+                <span className="muted">{o.categoryName} · ₱{o.totalPrice}</span>
+              </div>
+              {missing ? (
+                <p className="error-msg">This order is missing a User ID or Server ID, so it can&apos;t be filled in automatically.</p>
+              ) : (
+                <>
+                  <p className="process-ask">Process on which site?</p>
+                  <div className="process-sites">
+                    {SUPPLIER_SITES.map((s) => (
+                      <a
+                        key={s.name}
+                        className="process-site-btn"
+                        href={supplierLink(s.url, { userId, serverId, item, orderCode: o.orderCode ?? o.id })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => markProcessing(o, s.name)}
+                      >
+                        {s.name}
+                      </a>
+                    ))}
+                  </div>
+                </>
+              )}
+              {processMsg && <p className="field-hint process-msg">{processMsg}</p>}
+              <p className="field-hint" style={{ margin: '10px 0 0' }}>
+                The site opens in a new tab and fills in by itself (needs the Tampermonkey script). The order becomes
+                <strong> In Progress</strong> and the site name is written to the sheet&apos;s Supplier column.
+              </p>
+              <button type="button" className="pl-btn" style={{ marginTop: 12 }} onClick={() => setProcessing(null)}>Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {proofModalUrl && (
         <div className="qr-modal-overlay" onClick={() => setProofModalUrl(null)}>
           <div
@@ -390,14 +472,42 @@ export default function OrdersClient({
             style={{ width: '95vw', height: '95vh', maxWidth: 'none', maxHeight: 'none', display: 'flex', flexDirection: 'column' }}
           >
             <button className="qr-modal-close" onClick={() => setProofModalUrl(null)}>✕</button>
-            <h3>Proof of Payment</h3>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <h3>
+              Proof of Payment
+              {proofList.length > 1 && <span className="proof-count"> · {proofList.indexOf(proofModalUrl) + 1} of {proofList.length}</span>}
+            </h3>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
+              {proofList.length > 1 && (
+                <button
+                  type="button"
+                  className="proof-nav prev"
+                  aria-label="Previous image"
+                  onClick={() => { const i = proofList.indexOf(proofModalUrl); setProofModalUrl(proofList[(i - 1 + proofList.length) % proofList.length]); }}
+                >‹</button>
+              )}
               <img
                 src={proofModalUrl}
                 alt="Proof of payment"
                 style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
               />
+              {proofList.length > 1 && (
+                <button
+                  type="button"
+                  className="proof-nav next"
+                  aria-label="Next image"
+                  onClick={() => { const i = proofList.indexOf(proofModalUrl); setProofModalUrl(proofList[(i + 1) % proofList.length]); }}
+                >›</button>
+              )}
             </div>
+            {proofList.length > 1 && (
+              <div className="proof-thumbs">
+                {proofList.map((u, i) => (
+                  <button key={u} type="button" className={`proof-thumb${u === proofModalUrl ? ' active' : ''}`} aria-label={`Image ${i + 1}`} onClick={() => setProofModalUrl(u)}>
+                    <img src={u} alt="" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
