@@ -360,9 +360,22 @@ export default function OrdersClient({
                       <td colSpan={9}>
                         <div className="order-expand">
                           <div className="order-expand-col">
-                            <h4>Account Details</h4>
+                            <h4 className="order-expand-head">
+                              Account Details
+                              {/* One tap copies every detail (User ID, Server ID, IGN…), one per line */}
+                              {o.accountFields.some((f) => f.value && !screenshotHref(f.value)) && (
+                                <CopyButton
+                                  label="all account details"
+                                  text="Copy"
+                                  value={o.accountFields
+                                    .filter((f) => f.value && !screenshotHref(f.value))
+                                    .map((f) => `${f.label.replace(/^Enter\s+/i, '')}: ${f.value}`)
+                                    .join('\n')}
+                                />
+                              )}
+                            </h4>
                             {o.accountFields.map((f, i) => (
-                              <p key={i} className="order-expand-line"><strong>{f.label}:</strong>{' '}
+                              <p key={i} className="order-expand-line"><strong>{f.label.replace(/^Enter\s+/i, '')}:</strong>{' '}
                                 {screenshotHref(f.value)
                                   ? <a href={screenshotHref(f.value)!} target="_blank" rel="noopener noreferrer" className="login-link">View screenshot ↗</a>
                                   : (f.value || '—')}
@@ -372,7 +385,7 @@ export default function OrdersClient({
                             <p className="order-expand-line"><strong>Facebook:</strong> {o.facebookName || '—'}</p>
                             <p className="order-expand-line"><strong>Email:</strong> {o.email || '—'}</p>
                             {o.proofOfPaymentUrl && (
-                              <button className="qty-btn" style={{ width: 'auto', padding: '8px 14px', marginTop: 4 }} onClick={() => viewProof(o.id)}>
+                              <button className="qty-btn orders-expand-btn orders-proof-btn" onClick={() => viewProof(o.id)}>
                                 View Proof of Payment{splitProofs(o.proofOfPaymentUrl).length > 1 ? ` (${splitProofs(o.proofOfPaymentUrl).length})` : ''}
                               </button>
                             )}
@@ -546,5 +559,39 @@ function Pager({ page, pages, total, pageSize, onGo }: { page: number; pages: nu
         <button type="button" className="orders-page-btn" disabled={page >= pages} onClick={() => onGo(page + 1)}>Next ›</button>
       </div>
     </nav>
+  );
+}
+
+// Small "Copy" button next to a value (User ID, Server ID, IGN…); shows "Copied" for a moment
+function CopyButton({ value, label, text = 'Copy' }: { value: string; label: string; text?: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Older browsers / non-https: fall back to a hidden textarea
+      const t = document.createElement('textarea');
+      t.value = value;
+      t.style.position = 'fixed';
+      t.style.opacity = '0';
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      t.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  }
+  return (
+    <button type="button" className={`copy-chip${copied ? ' copied' : ''}`} onClick={copy} aria-label={`Copy ${label}`} title={`Copy ${label}`}>
+      {copied ? '✓ Copied' : (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
+          {text}
+        </>
+      )}
+    </button>
   );
 }

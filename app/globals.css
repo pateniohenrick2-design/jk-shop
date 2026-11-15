@@ -1380,3 +1380,11 @@ button.btn-ghost { background: none; cursor: pointer; font-family: inherit; }
 .proof-thumb { width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 2px solid transparent; padding: 0; background: #fff; cursor: pointer; opacity: .65; }
 .proof-thumb.active { border-color: var(--accent); opacity: 1; }
 .proof-thumb img { width: 100%; height: 100%; object-fit: cover; margin: 0; padding: 0; border-radius: 0; max-width: none; }
+
+/* Admin order details: copy button next to User ID / Server ID / IGN */
+.copy-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 8px; border-radius: 6px; vertical-align: middle;
+  background: #1e2b1e; border: 1px solid var(--border); color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; }
+.copy-chip:hover { border-color: var(--accent); }
+.copy-chip.copied { background: var(--accent); color: #0a0f0a; border-color: var(--accent); }
+.order-expand-head { display: flex; align-items: center; gap: 4px; }
+.orders-proof-btn { height: auto; margin-top: 6px; }
