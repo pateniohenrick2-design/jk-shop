@@ -156,7 +156,7 @@ export default function CategoryAvailability({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="cat-avail-modal-head">
-              <h3 id="cat-avail-title">Event availability</h3>
+              <h3 id="cat-avail-title">Category availability</h3>
               <button type="button" className="cat-avail-close" aria-label="Close" onClick={() => setOpen(false)} disabled={busy}>✕</button>
             </div>
 
@@ -184,7 +184,7 @@ export default function CategoryAvailability({
                 <DateTimeField label="Closes on (deadline)" value={until} onChange={setUntil} defaultTime="23:59" disabled={busy} />
               </div>
               <p className="field-hint" style={{ margin: 0 }}>
-                Leave a date empty for no limit. Customers only see this event while it&apos;s enabled and between these times (in this computer&apos;s time zone).
+                Leave a date empty for no limit. Customers only see this category while it&apos;s enabled and between these times (in this computer&apos;s time zone).
               </p>
               {error && <p className="error-msg" style={{ margin: 0 }}>{error}</p>}
             </div>

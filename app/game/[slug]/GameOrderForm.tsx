@@ -7,6 +7,7 @@ import { compressImage } from '@/lib/compressImage';
 import { supabase } from '@/lib/supabase';
 import { useCustomer } from '@/lib/useCustomer';
 import PaymentLogo from '@/components/PaymentLogo';
+import ThemedSelect from '@/components/ThemedSelect';
 import { normalizeLabel, savedAccountName, type SavedAccount } from '@/lib/savedAccounts';
 import { itemIcon, isWideIcon } from '@/lib/itemIcons';
 import { screenshotHref } from '@/lib/accountValue';
@@ -19,9 +20,12 @@ type Field = { id: string; label: string; helperText?: string | null; fieldType?
 
 // Screenshot-type account fields (e.g. Robux "Profile Screenshot (attach)") are file uploads, like the proof of payment
 const isFileField = (f: Field) => f.fieldType === 'file' || /screenshot|(attach)|attach(ment)?|upload/i.test(f.label);
+// Name shown to customers: drops the shop's own '(Alt)' marker (e.g. 'Emote (Alt)' → 'Emote').
+// The full name stays in the admin, sheet and receipts so the two emotes can be told apart.
+const customerItemName = (name: string) => name.replace(/\s*\(alt\)\s*/i, ' ').trim();
 const fieldTitle = (f: Field) => f.label.replace(/s*(attach)s*/i, ' ').trim();
 type Hero = { id: string; heroName: string; price: number; imageUrl: string | null };
-type SchedulePhase = { id: string; heroId: string; phaseName: string; startDate: string; endDate: string; price: number; soldOutAt: string | null };
+type SchedulePhase = { id: string; heroId: string; phaseName: string; startDate: string; endDate: string; price: number; soldOutAt: string | null; allowDownpayment?: boolean };
 type EventDef = { id: string; name: string; basePrice: number; endDate: string; heroes: Hero[]; schedule: SchedulePhase[] };
 type Category = { id: string; name: string; group: string; fields: Field[]; items: Item[]; events: EventDef[] };
 type Game = { id: string; name: string; slug: string; description?: string | null; categories: Category[] };
@@ -257,6 +261,27 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
   const stepProof = 5 + offset;
   const stepConfirmation = 6 + offset;
 
+  // "Order again" links (home page): /game/<slug>?category=<id>&item=<id> preselects that category + item
+  const orderPanelScrolled = useRef(false);
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.search);
+    const cat = qs.get('category');
+    const itm = qs.get('item');
+    const target = cat ? game.categories.find((c) => c.id === cat) : undefined;
+    if (!target) return;
+    setCategoryId(target.id);
+    const it = itm ? target.items.find((x) => x.id === itm && x.status !== 'sold_out') : undefined;
+    if (it) {
+      setItemId(it.id);
+      // the item may be past the first 10 rows → show the whole list
+      if (target.items.findIndex((x) => x.id === it.id) >= 10) setItemsExpanded(true);
+    }
+    if (!orderPanelScrolled.current) {
+      orderPanelScrolled.current = true;
+      setTimeout(() => orderPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function selectCategory(id: string) {
     setCategoryId(id);
     setItemsExpanded(false);
@@ -480,14 +505,13 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                 </button>
               ))}
               {otherCats.length > 0 && (
-                <select
-                  className="others-sel"
+                <ThemedSelect
+                  className="others-tsel"
                   value={otherCats.some((c) => c.id === categoryId) ? categoryId : ''}
-                  onChange={(e) => e.target.value && selectCategory(e.target.value)}
-                >
-                  <option value="">Others — {otherCats.length} more categories</option>
-                  {otherCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                  placeholder={`Others — ${otherCats.length} more categories`}
+                  options={otherCats.map((c) => ({ value: c.id, label: c.name }))}
+                  onChange={(v) => v && selectCategory(v)}
+                />
               )}
             </div>
           </div>
@@ -514,7 +538,7 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                 >
                   <span className="item-label">
                     {icon && <img className={`item-icon ${!uploaded && isWideIcon(icon) ? 'wide' : ''}`} src={icon} alt="" width={32} height={32} loading="lazy" decoding="async" />}
-                    <span>{it.name}</span>
+                    <span>{customerItemName(it.name)}</span>
                   </span>
                   <span>{it.status === 'sold_out' ? 'SOLD OUT' : `₱${it.price}`}</span>
                 </button>
@@ -597,7 +621,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
                             {s.phaseName}
                             <span className="range">{new Date(s.startDate).toLocaleDateString()} – {new Date(s.endDate).toLocaleDateString()}</span>
                           </span>
-                          <span>{sold ? 'SOLD OUT' : `₱${s.price}`}</span>
+                          <span className="phase-price">
+                            {sold ? 'SOLD OUT' : <>
+                              ₱{s.price.toLocaleString('en-PH')}
+                              {s.allowDownpayment && <small className="phase-dp">50% DP ₱{(Math.ceil(s.price / 2 * 100) / 100).toLocaleString('en-PH')}</small>}
+                            </>}
+                          </span>
                         </button>
                       );
                     })}
@@ -616,6 +645,24 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
 
         <div className="panel step-payment" ref={paymentPanelRef}>
           <div className="panel-head"><span className="step-num">{stepPayment}</span><h2>Choose Payment Method</h2></div>
+          {/* Event Skin Gifting: downpayment reminder for the chosen delivery phase (switch per phase in Admin → Events) */}
+          {category?.name === 'Event Skin Gifting' && selectedPhase && (
+            selectedPhase.allowDownpayment ? (
+              <div className="dp-note on" role="note">
+                <strong>💸 We&apos;re accepting 50% downpayment</strong>
+                <span>
+                  {total > 0
+                    ? <>Pay at least <b>₱{(Math.ceil(total / 2 * 100) / 100).toLocaleString('en-PH')}</b> now (half of ₱{total.toLocaleString('en-PH')}). The rest is paid before delivery.</>
+                    : 'Pay half now and the rest before delivery.'}
+                </span>
+              </div>
+            ) : (
+              <div className="dp-note off" role="note">
+                <strong>Full payment required</strong>
+                <span>{total > 0 ? <>Please pay the full <b>₱{total.toLocaleString('en-PH')}</b>.</> : 'Please pay the full amount.'}</span>
+              </div>
+            )
+          )}
           <div role="radiogroup" aria-label="Payment method">
           {paymentMethods.map((p) => {
             const active = paymentId === p.id;

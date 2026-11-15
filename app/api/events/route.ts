@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'At least one valid hero skin is required' }, { status: 400 });
   }
 
-  const phases: { phaseName: string; startDate: Date; endDate: Date; soldOutAt: Date | null; pricesByHero: (number | null)[] }[] = [];
+  const phases: { phaseName: string; startDate: Date; endDate: Date; soldOutAt: Date | null; allowDownpayment: boolean; pricesByHero: (number | null)[] }[] = [];
   for (let p = 0; p < scheduleCount; p++) {
     const phaseName = (formData.get(`phaseName_${p}`) as string)?.trim();
     const phaseStart = formData.get(`phaseStart_${p}`) as string;
@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
       const parsed = raw ? parseFloat(raw) : NaN;
       pricesByHero.push(!isNaN(parsed) && parsed > 0 ? parsed : null);
     }
-    phases.push({ phaseName, startDate: new Date(phaseStart), endDate: new Date(phaseEnd), soldOutAt, pricesByHero });
+    // 50% downpayment allowed for this delivery phase
+    const allowDownpayment = formData.get(`phaseDownpayment_${p}`) === '1';
+    phases.push({ phaseName, startDate: new Date(phaseStart), endDate: new Date(phaseEnd), soldOutAt, allowDownpayment, pricesByHero });
   }
 
   // Each hero's price = its cheapest delivery-schedule price (shown to customers as "From ₱…")
@@ -96,6 +98,7 @@ export async function POST(req: NextRequest) {
             startDate: phase.startDate,
             endDate: phase.endDate,
             soldOutAt: phase.soldOutAt,
+            allowDownpayment: phase.allowDownpayment,
             price,
           },
         });

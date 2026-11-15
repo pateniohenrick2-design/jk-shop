@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { screenshotHref } from '@/lib/accountValue';
 import { SUPPLIER_SITES, canProcessOnSupplier, supplierLink } from '@/lib/supplierSites';
 import { splitProofs } from '@/lib/proofs';
+import ThemedSelect from '@/components/ThemedSelect';
 import {
   GENERAL_OPTIONS, GIFTING_OPTIONS, isGiftingCategory, statusBadgeClass, statusLabel, type OrderStatusValue,
 } from '@/lib/orderStatus';
@@ -138,22 +139,6 @@ export default function OrdersClient({
 
   const filtered = orders; // already searched/filtered by the server (one page)
 
-  function toggleSelected(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    if (selected.size === filtered.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filtered.map((o) => o.id)));
-    }
-  }
-
   async function updateStatus(id: string, status: string) {
     setBusyId(id);
     try {
@@ -275,27 +260,35 @@ export default function OrdersClient({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select className="others-sel orders-filter-sel" value={filters.game} onChange={(e) => go({ game: e.target.value, page: 1 })}>
-            <option value="all">All Games</option>
-            {games.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-          <select className="others-sel orders-filter-sel" value={filters.status} onChange={(e) => go({ status: e.target.value, page: 1 })}>
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="reserved">Reserved (gifting)</option>
-            <option value="friends">Friends (gifting)</option>
-            <option value="successful">Successful / Delivered</option>
-            <option value="refund">Refund</option>
-            <option value="failed">Failed</option>
-          </select>
+          <ThemedSelect
+            className="orders-filter-sel"
+            ariaLabel="Filter by game"
+            value={filters.game}
+            onChange={(v) => go({ game: v, page: 1 })}
+            options={[{ value: 'all', label: 'All Games' }, ...games.map((g) => ({ value: g.id, label: g.name }))]}
+          />
+          <ThemedSelect
+            className="orders-filter-sel"
+            ariaLabel="Filter by status"
+            value={filters.status}
+            onChange={(v) => go({ status: v, page: 1 })}
+            options={[
+              { value: 'all', label: 'All Status' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'in_progress', label: 'In Progress' },
+              { value: 'reserved', label: 'Reserved (gifting)' },
+              { value: 'friends', label: 'Friends (gifting)' },
+              { value: 'successful', label: 'Successful / Delivered' },
+              { value: 'refund', label: 'Refund' },
+              { value: 'failed', label: 'Failed' },
+            ]}
+          />
           <button className="qty-btn orders-bulk-btn" onClick={exportCSV} title="Downloads every order matching the search and filters">Export CSV ({total})</button>
         </div>
 
         <table className="admin-table orders-table">
           <thead>
             <tr>
-              <th><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleSelectAll} /></th>
               <th>Order</th>
               <th>Game</th>
               <th>Item / Category</th>
@@ -308,7 +301,7 @@ export default function OrdersClient({
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={9} className="field-hint">No matching orders.</td></tr>
+              <tr><td colSpan={8} className="field-hint">No matching orders.</td></tr>
             )}
             {filtered.map((o) => {
               const isExpanded = expandedId === o.id;
@@ -319,7 +312,6 @@ export default function OrdersClient({
               return (
                 <>
                   <tr key={o.id} className="orders-row">
-                    <td className="oc-check"><input type="checkbox" aria-label={`Select ${o.orderCode ?? o.id}`} checked={selected.has(o.id)} onChange={() => toggleSelected(o.id)} /></td>
                     <td className="oc-code" data-label="Order">{(o.orderCode ?? shortId(o.id))}</td>
                     <td className="oc-game" data-label="Game">{o.gameName}</td>
                     <td className="oc-item" data-label="Item">{o.itemName ?? o.eventName ?? o.categoryName}</td>
@@ -333,17 +325,16 @@ export default function OrdersClient({
                     </td>
                     <td className="oc-date" data-label="Date">{new Date(o.createdAt).toLocaleDateString()}</td>
                     <td className="oc-actions">
-                      <select
-                        className="others-sel orders-status-sel"
+                      {/* Keep the current status selectable even if it isn't one of this order type's usual choices */}
+                      <ThemedSelect
+                        className="orders-status-sel"
+                        size="sm"
+                        ariaLabel={`Status of ${o.orderCode ?? o.id}`}
                         value={o.status}
                         disabled={busyId === o.id}
-                        onChange={(e) => updateStatus(o.id, e.target.value)}
-                      >
-                        {/* Keep the current status selectable even if it isn't one of this order type's usual choices */}
-                        {(options.includes(o.status) ? options : [o.status, ...options]).map((s) => (
-                          <option key={s} value={s}>{statusLabel(s, gifting)}</option>
-                        ))}
-                      </select>
+                        onChange={(v) => updateStatus(o.id, v)}
+                        options={(options.includes(o.status) ? options : [o.status, ...options]).map((s) => ({ value: s, label: statusLabel(s, gifting) }))}
+                      />
                       {/* Only orders still waiting to be topped up */}
                       {canProcessOnSupplier(o) && (o.status === 'pending' || o.status === 'in_progress') && (
                         <button className="qty-btn orders-process-btn" title="Open a top-up site with this order filled in" onClick={() => { setProcessMsg(null); setProcessing(o); }}>
@@ -357,7 +348,7 @@ export default function OrdersClient({
                   </tr>
                   {isExpanded && (
                     <tr key={`${o.id}-expand`} className="orders-expand-row">
-                      <td colSpan={9}>
+                      <td colSpan={8}>
                         <div className="order-expand">
                           <div className="order-expand-col">
                             <h4 className="order-expand-head">

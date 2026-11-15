@@ -3,6 +3,8 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import HowToOrder from '@/components/HowToOrder';
+import RecentOrders from '@/components/RecentOrders';
+import BrowseGamesButton from '@/components/BrowseGamesButton';
 
 // Refresh the game list at most every 60s (same as the game pages)
 export const revalidate = 60;
@@ -37,7 +39,7 @@ export default async function HomePage() {
           ourselves and load it straight to your account, usually within minutes during store hours.
         </p>
         <div className="hero-actions">
-          <a href="#games" className="btn-primary">Browse Games →</a>
+          <BrowseGamesButton />
           <HowToOrder />
         </div>
         <ul className="hero-points">
@@ -48,6 +50,9 @@ export default async function HomePage() {
         </div>
         <img src="/logo/jk-logo.png" alt="JK" className="hero-logo" />
       </section>
+
+      {/* Logged-in customers: their recent orders, one tap to order again */}
+      <RecentOrders />
 
       <section id="games" className="section">
         <h2>GAME OFFERS</h2>

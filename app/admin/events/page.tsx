@@ -35,6 +35,7 @@ export default async function AdminEventsPage() {
         endDate: s.endDate.toISOString().slice(0, 10),
         price: Number(s.price),
         soldOutOn: toManilaDateString(s.soldOutAt),
+        allowDownpayment: s.allowDownpayment,
       })),
     })),
   }));

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { isCategoryOpen } from '@/lib/categoryAvailability';
+import { linkedDiamondName } from '@/lib/linkedPrices.shared';
 import GameOrderForm from './GameOrderForm';
 
 export const revalidate = 60;
@@ -39,6 +40,18 @@ export default async function GamePage({ params }: { params: { slug: string } })
 
   if (!game) return notFound();
   const renderedAt = Date.now();
+  // 'via Recharge (N Diamonds)' items always show the current price of 'N Diamonds' in this game's Diamonds category
+  const norm = (x: string) => x.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  const diamondPrice = new Map<string, number>();
+  for (const c of game.categories) {
+    if (c.name.trim().toLowerCase() !== 'diamonds') continue;
+    for (const it of c.items) diamondPrice.set(norm(it.name), Number(it.price));
+  }
+  const priceOf = (name: string, stored: number): number => {
+    const linked = linkedDiamondName(name);
+    const p = linked ? diamondPrice.get(norm(linked)) : undefined;
+    return p ?? stored;
+  };
 
   // Prisma's Decimal type can't cross the server->client component boundary as-is,
   // so plain numbers/objects are built here before handing off to the client form.
@@ -56,7 +69,7 @@ export default async function GamePage({ params }: { params: { slug: string } })
       items: c.items.map((it) => ({
         id: it.id,
         name: it.name,
-        price: Number(it.price),
+        price: priceOf(it.name, Number(it.price)),
         status: it.status,
         iconUrl: it.iconUrl,
       })),
@@ -77,6 +90,7 @@ export default async function GamePage({ params }: { params: { slug: string } })
             price: Number(s.price),
             // Checked in the browser too, so a cached page still flips to SOLD OUT on time
             soldOutAt: s.soldOutAt ? s.soldOutAt.toISOString() : null,
+            allowDownpayment: s.allowDownpayment,
           })),
         })),
     })),

@@ -1,9 +1,14 @@
 import { prisma } from '@/lib/prisma';
+import { syncLinkedPrices } from '@/lib/linkedPrices';
 import PricelistsClient from './PricelistsClient';
 
 export const revalidate = 0;
 
 export default async function AdminPricelistsPage() {
+  // Keep "via Recharge (N Diamonds)" items equal to their Diamonds price before showing the list
+  const gameIds = await prisma.game.findMany({ select: { id: true } });
+  await Promise.all(gameIds.map((g) => syncLinkedPrices(g.id)));
+
   const games = await prisma.game.findMany({
     select: {
       id: true,

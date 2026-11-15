@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { syncLinkedPricesForCategory } from '@/lib/linkedPrices';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -22,5 +23,7 @@ export async function POST(req: NextRequest) {
       sortOrder: (max._max.sortOrder ?? -1) + 1,
     },
   });
-  return NextResponse.json(item);
+  await syncLinkedPricesForCategory(categoryId);
+  const fresh = await prisma.pricelistItem.findUnique({ where: { id: item.id } });
+  return NextResponse.json(fresh ?? item);
 }

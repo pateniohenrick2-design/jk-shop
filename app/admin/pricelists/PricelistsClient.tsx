@@ -19,10 +19,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import BulkPasteModal from "./BulkPasteModal";
 import CategoryAvailability from "./CategoryAvailability";
-import { hasAvailabilityControl } from "@/lib/categoryAvailability";
+import ThemedSelect from "@/components/ThemedSelect";
 import { itemIcon, isWideIcon } from "@/lib/itemIcons";
 import { screenshotHref } from "@/lib/accountValue";
 import { resizeIcon } from "@/lib/resizeIcon";
+import { linkedDiamondName } from "@/lib/linkedPrices.shared";
 import EventCategoryPanel, { type EventInfo } from "./EventCategoryPanel";
 
 type Item = {
@@ -728,17 +729,16 @@ export default function PricelistsClient({
                   value={categoryNameDraft}
                   onChange={(e) => setCategoryNameDraft(e.target.value)}
                 />
-                <select
-                  className="others-sel"
-                  style={{ marginTop: 8, width: "100%" }}
+                <ThemedSelect
+                  className="tsel-spaced"
+                  ariaLabel="Category group"
                   value={categoryGroupDraft}
-                  onChange={(e) =>
-                    setCategoryGroupDraft(e.target.value as "main" | "others")
-                  }
-                >
-                  <option value="main">Main Category</option>
-                  <option value="others">Others</option>
-                </select>
+                  onChange={(v) => setCategoryGroupDraft(v as "main" | "others")}
+                  options={[
+                    { value: "main", label: "Main Category" },
+                    { value: "others", label: "Others" },
+                  ]}
+                />
                 <div className="item-actions" style={{ marginTop: 8 }}>
                   <button
                     className="qty-btn icon-btn icon-btn-confirm"
@@ -851,7 +851,26 @@ export default function PricelistsClient({
             {!selectedCategory ? (
               <div className="pl-empty">Select a category on the left to manage its items.</div>
             ) : isEventCategory ? (
-              <EventCategoryPanel categoryName={selectedCategory.name} events={selectedCategory.events ?? []} />
+              <>
+                {/* On/off + dates work for event categories too (e.g. hide Event Skin Gifting between events) */}
+                <CategoryAvailability
+                  categoryId={selectedCategory.id}
+                  value={{
+                    isActive: selectedCategory.isActive ?? true,
+                    availableFrom: selectedCategory.availableFrom ?? null,
+                    availableUntil: selectedCategory.availableUntil ?? null,
+                  }}
+                  onSaved={(v) =>
+                    setGames((prev) =>
+                      prev.map((g) => ({
+                        ...g,
+                        categories: g.categories.map((c) => (c.id === selectedCategory.id ? { ...c, ...v } : c)),
+                      })),
+                    )
+                  }
+                />
+                <EventCategoryPanel categoryName={selectedCategory.name} events={selectedCategory.events ?? []} />
+              </>
             ) : (
               <>
                 <div className="pl-toolbar">
@@ -901,7 +920,7 @@ export default function PricelistsClient({
                   </div>
                 </div>
 
-                {hasAvailabilityControl(selectedCategory.name) && (
+                {(
                 <CategoryAvailability
                   categoryId={selectedCategory.id}
                   value={{
@@ -965,16 +984,15 @@ export default function PricelistsClient({
                       </div>
                       <div>
                         <label className="field-label">Status</label>
-                        <select
-                          className="field-input"
+                        <ThemedSelect
+                          ariaLabel="Status"
                           value={itemDraft.status}
-                          onChange={(e) =>
-                            setItemDraft((d) => ({ ...d, status: e.target.value as "available" | "sold_out" }))
-                          }
-                        >
-                          <option value="available">Available</option>
-                          <option value="sold_out">Sold Out</option>
-                        </select>
+                          onChange={(v) => setItemDraft((d) => ({ ...d, status: v as "available" | "sold_out" }))}
+                          options={[
+                            { value: "available", label: "Available" },
+                            { value: "sold_out", label: "Sold Out" },
+                          ]}
+                        />
                       </div>
                       <div className="pl-add-notes">
                         <label className="field-label">Notes</label>
@@ -1279,20 +1297,16 @@ function CategoryEditRow({
         value={editDraft.name}
         onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
       />
-      <select
-        className="others-sel"
-        style={{ marginTop: 6, width: "100%" }}
+      <ThemedSelect
+        className="tsel-spaced"
+        ariaLabel="Category group"
         value={editDraft.group}
-        onChange={(e) =>
-          setEditDraft({
-            ...editDraft,
-            group: e.target.value as "main" | "others",
-          })
-        }
-      >
-        <option value="main">Main Category</option>
-        <option value="others">Others</option>
-      </select>
+        onChange={(v) => setEditDraft({ ...editDraft, group: v as "main" | "others" })}
+        options={[
+          { value: "main", label: "Main Category" },
+          { value: "others", label: "Others" },
+        ]}
+      />
       <div className="item-actions" style={{ marginTop: 6 }}>
         <button
           className="qty-btn icon-btn icon-btn-confirm"
@@ -1395,7 +1409,14 @@ function SortableItemRow({
           </button>
         ) : null}
       </td>
-      <td className="pl-name">{item.name}</td>
+      <td className="pl-name">
+        {item.name}
+        {linkedDiamondName(item.name) && (
+          <span className="pl-linked" title={`Price is copied from "${linkedDiamondName(item.name)}" in Diamonds whenever that price changes`}>
+            🔗 Same price as {linkedDiamondName(item.name)}
+          </span>
+        )}
+      </td>
       <td className="pl-num pl-price">₱{item.price.toLocaleString()}</td>
       <td className="pl-num">
         {item.originalPrice != null ? <s className="pl-orig">₱{item.originalPrice.toLocaleString()}</s> : <span className="pl-dash">—</span>}
@@ -1469,19 +1490,16 @@ function ItemEditRow({
         />
       </td>
       <td>
-        <select
-          className="others-sel"
+        <ThemedSelect
+          size="sm"
+          ariaLabel="Item status"
           value={editDraft.status}
-          onChange={(e) =>
-            setEditDraft({
-              ...editDraft,
-              status: e.target.value as "available" | "sold_out",
-            })
-          }
-        >
-          <option value="available">Available</option>
-          <option value="sold_out">Sold Out</option>
-        </select>
+          onChange={(v) => setEditDraft({ ...editDraft, status: v as "available" | "sold_out" })}
+          options={[
+            { value: "available", label: "Available" },
+            { value: "sold_out", label: "Sold Out" },
+          ]}
+        />
       </td>
       <td>
         <input

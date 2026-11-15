@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAdminSession } from '@/lib/adminSession';
+import { syncLinkedPricesForCategory } from '@/lib/linkedPrices';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   if (!(await getAdminSession())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,7 +21,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data.iconUrl = body.iconUrl;
   }
 
-  const item = await prisma.pricelistItem.update({ where: { id: params.id }, data });
+  let item = await prisma.pricelistItem.update({ where: { id: params.id }, data });
+  // Diamonds price changed → "via Recharge (N Diamonds)" items follow; a linked item keeps the Diamonds price
+  if (data.price !== undefined || data.name !== undefined) {
+    await syncLinkedPricesForCategory(item.categoryId);
+    item = (await prisma.pricelistItem.findUnique({ where: { id: item.id } })) ?? item;
+  }
   return NextResponse.json(item);
 }
 

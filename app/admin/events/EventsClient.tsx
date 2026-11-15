@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { manilaStartOfDay, isSoldOut, toManilaDateString } from '@/lib/manilaDate';
+import ThemedSelect from '@/components/ThemedSelect';
 
 // soldOutOn: "YYYY-MM-DD" (Philippine day the phase becomes sold out) or "" for never
-type SchedulePhase = { phaseName: string; startDate: string; endDate: string; price: number; soldOutOn: string };
+type SchedulePhase = { phaseName: string; startDate: string; endDate: string; price: number; soldOutOn: string; allowDownpayment?: boolean };
 type Hero = { heroName: string; price: number; imageUrl: string | null; schedule: SchedulePhase[] };
 type EventRow = {
   id: string;
@@ -27,6 +28,7 @@ type PhaseDraft = {
   startDate: string;
   endDate: string;
   soldOutOn: string; // "" = stays available until the event ends
+  allowDownpayment: boolean; // customers may pay 50% now
   pricesByHero: string[];
 };
 
@@ -51,18 +53,18 @@ function emptyHeroDraft(): HeroDraft {
 }
 
 function emptyPhaseDraft(heroCount: number): PhaseDraft {
-  return { phaseName: '', startDate: '', endDate: '', soldOutOn: '', pricesByHero: Array(heroCount).fill('') };
+  return { phaseName: '', startDate: '', endDate: '', soldOutOn: '', allowDownpayment: false, pricesByHero: Array(heroCount).fill('') };
 }
 
 // Rebuild each event's unique phase list (name+dates) from the per-hero schedule arrays,
 // since phases are stored per-hero in the DB but shown/edited as one shared row in the UI.
-type PhaseInfo = { phaseName: string; startDate: string; endDate: string; soldOutOn: string };
+type PhaseInfo = { phaseName: string; startDate: string; endDate: string; soldOutOn: string; allowDownpayment: boolean };
 function derivePhasesFromHeroes(heroes: Hero[]): PhaseInfo[] {
   const seen = new Map<string, PhaseInfo>();
   for (const h of heroes) {
     for (const s of h.schedule) {
       const key = `${s.phaseName}|${s.startDate}|${s.endDate}`;
-      if (!seen.has(key)) seen.set(key, { phaseName: s.phaseName, startDate: s.startDate, endDate: s.endDate, soldOutOn: s.soldOutOn });
+      if (!seen.has(key)) seen.set(key, { phaseName: s.phaseName, startDate: s.startDate, endDate: s.endDate, soldOutOn: s.soldOutOn, allowDownpayment: !!s.allowDownpayment });
     }
   }
   return Array.from(seen.values());
@@ -185,6 +187,7 @@ export default function EventsClient({
         startDate: phase.startDate,
         endDate: phase.endDate,
         soldOutOn: phase.soldOutOn,
+        allowDownpayment: phase.allowDownpayment,
         pricesByHero: e.heroes.map((h) => {
           const match = h.schedule.find(
             (s) => s.phaseName === phase.phaseName && s.startDate === phase.startDate && s.endDate === phase.endDate
@@ -243,6 +246,7 @@ export default function EventsClient({
         formData.append(`phaseStart_${pIdx}`, p.startDate);
         formData.append(`phaseEnd_${pIdx}`, p.endDate);
         if (p.soldOutOn) formData.append(`phaseSoldOut_${pIdx}`, p.soldOutOn);
+        if (p.allowDownpayment) formData.append(`phaseDownpayment_${pIdx}`, '1');
         heroIdx.forEach((orig, hIdx) => {
           const price = p.pricesByHero[orig] ?? '';
           if (price) formData.append(`schedulePrice_${pIdx}_${hIdx}`, price);
@@ -272,6 +276,7 @@ export default function EventsClient({
             endDate: s.endDate.slice(0, 10),
             price: Number(s.price),
             soldOutOn: s.soldOutAt ? toManilaDateString(s.soldOutAt) : '',
+            allowDownpayment: !!s.allowDownpayment,
           })),
         })),
       };
@@ -524,18 +529,17 @@ export default function EventsClient({
               <div className="event-phase-row">
                 <div>
                   <label className="field-label">Phase Label</label>
-                  <select
-                    className="field-input"
+                  {/* Older events may use a label that isn't in the list — keep it selectable */}
+                  <ThemedSelect
+                    ariaLabel="Phase label"
+                    placeholder="Select phase…"
                     value={p.phaseName}
-                    onChange={(e) => updatePhaseField(phaseIdx, 'phaseName', e.target.value)}
-                  >
-                    <option value="" disabled>Select phase…</option>
-                    {PHASE_LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                    {/* Older events may use a label that isn't in the list — keep it selectable */}
-                    {p.phaseName && !PHASE_LABELS.includes(p.phaseName) && (
-                      <option value={p.phaseName}>{p.phaseName}</option>
-                    )}
-                  </select>
+                    onChange={(v) => updatePhaseField(phaseIdx, 'phaseName', v)}
+                    options={[
+                      ...PHASE_LABELS.map((l) => ({ value: l, label: l })),
+                      ...(p.phaseName && !PHASE_LABELS.includes(p.phaseName) ? [{ value: p.phaseName, label: p.phaseName }] : []),
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="field-label">Start Date</label>
@@ -593,7 +597,9 @@ export default function EventsClient({
               </div>
 
               <div className="event-phase-hero-prices">
-                {heroDrafts.map((h, heroIdx) => (
+                {heroDrafts.map((h, heroIdx) => {
+                  const full = parseFloat(p.pricesByHero[heroIdx] ?? '');
+                  return (
                   <div key={heroIdx}>
                     <label className="field-label">{h.heroName.trim() || `Hero ${heroIdx + 1}`}</label>
                     <div className="input-prefix">
@@ -607,9 +613,29 @@ export default function EventsClient({
                         onChange={(e) => updatePhasePrice(phaseIdx, heroIdx, e.target.value)}
                       />
                     </div>
+                    {p.allowDownpayment && full > 0 && (
+                      <p className="phase-dp-preview">50% downpayment: <strong>₱{(Math.ceil(full / 2 * 100) / 100).toLocaleString('en-PH')}</strong> · full ₱{full.toLocaleString('en-PH')}</p>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
+
+              <label className="phase-dp-toggle">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={p.allowDownpayment}
+                  className={`cat-avail-switch${p.allowDownpayment ? ' on' : ''}`}
+                  onClick={() => setPhaseDrafts((prev) => prev.map((x, idx) => (idx === phaseIdx ? { ...x, allowDownpayment: !x.allowDownpayment } : x)))}
+                >
+                  <span className="cat-avail-knob" />
+                </button>
+                <span>
+                  <strong>Accept 50% downpayment</strong>
+                  <small>{p.allowDownpayment ? 'Customers can pay half now, the rest before delivery.' : 'Off: customers must pay the full price.'}</small>
+                </span>
+              </label>
             </div>
           ))}
           <button type="button" className="event-add-btn" onClick={addPhaseRow}>+ Add delivery phase</button>

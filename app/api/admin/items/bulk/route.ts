@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { syncLinkedPricesForCategory } from '@/lib/linkedPrices';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth';
@@ -104,6 +105,11 @@ export async function POST(req: NextRequest) {
     const items = await tx.pricelistItem.findMany({ where: { categoryId }, orderBy: { sortOrder: 'asc' } });
     return { created, updated, unchanged, markedSoldOut, items };
   }, { timeout: 30000 });
+
+  // Diamonds prices pasted → 'via Recharge (N Diamonds)' items follow; pasted linked items keep the Diamonds price
+  if (await syncLinkedPricesForCategory(categoryId)) {
+    result.items = await prisma.pricelistItem.findMany({ where: { categoryId }, orderBy: { sortOrder: 'asc' } });
+  }
 
   return NextResponse.json({
     ...result,

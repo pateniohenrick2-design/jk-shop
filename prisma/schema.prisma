@@ -134,6 +134,7 @@ model EventSchedule {
   endDate    DateTime
   price      Decimal
   soldOutAt  DateTime? // admin-set: from this moment the phase shows as SOLD OUT to customers
+  allowDownpayment Boolean @default(false) // customers may pay 50% now, the rest before delivery
 }
 
 model PaymentMethod {

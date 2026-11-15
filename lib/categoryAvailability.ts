@@ -20,8 +20,7 @@ export function availabilityState(a: Availability, now: number = Date.now()): Av
   return 'open';
 }
 
-// Only Pre-Order Event categories have the on/off switch and dates; every other category is always open
-export const hasAvailabilityControl = (categoryName: string) => /pre[\s-]?order/i.test(categoryName);
+// Every category has the on/off switch + optional open/close dates (Admin → Pricelists → Manage)
+export const isPreOrderCategory = (categoryName: string) => /pre[\s-]?order/i.test(categoryName);
 
-export const isCategoryOpen = (c: Availability & { name: string }, now?: number) =>
-  !hasAvailabilityControl(c.name) || availabilityState(c, now) === 'open';
+export const isCategoryOpen = (c: Availability & { name?: string }, now?: number) => availabilityState(c, now) === 'open';

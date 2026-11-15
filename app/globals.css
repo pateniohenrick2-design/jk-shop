@@ -1292,16 +1292,15 @@ button.btn-ghost { background: none; cursor: pointer; font-family: inherit; }
 @media (max-width: 760px) {
   .orders-table thead { display: none; }
   .orders-table, .orders-table tbody { display: block; }
-  .orders-table tr.orders-row { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas:
-      "check code   amount"
-      "check item   item"
-      "check game   game"
-      "check cust   date"
-      "check status status"
-      "check acts   acts";
+  .orders-table tr.orders-row { display: grid; grid-template-columns: 1fr auto; grid-template-areas:
+      "code   amount"
+      "item   item"
+      "game   game"
+      "cust   date"
+      "status status"
+      "acts   acts";
     column-gap: 10px; row-gap: 4px; padding: 14px 12px; margin-bottom: 10px; background: #1b261b; border: 1px solid var(--border); border-radius: 14px; }
   .orders-table tr.orders-row td { padding: 0; border: none; font-size: 13px; }
-  .orders-table .oc-check { grid-area: check; padding-top: 2px !important; }
   .orders-table .oc-code { grid-area: code; font-weight: 800; font-size: 14px !important; }
   .orders-table .oc-amount { grid-area: amount; font-weight: 800; font-size: 14px !important; text-align: right; }
   .orders-table .oc-item { grid-area: item; font-weight: 600; }
@@ -1388,3 +1387,116 @@ button.btn-ghost { background: none; cursor: pointer; font-family: inherit; }
 .copy-chip.copied { background: var(--accent); color: #0a0f0a; border-color: var(--accent); }
 .order-expand-head { display: flex; align-items: center; gap: 4px; }
 .orders-proof-btn { height: auto; margin-top: 6px; }
+
+/* Event Skin Gifting: downpayment reminder */
+.dp-note { display: flex; flex-direction: column; gap: 3px; border-radius: 12px; padding: 12px 14px; margin: 0 0 14px; font-size: 13px; line-height: 1.5; }
+.dp-note strong { font-size: 14px; }
+.dp-note b { color: var(--text); }
+.dp-note.on { background: rgba(224,194,106,.12); border: 1px solid rgba(224,194,106,.45); color: #f2e6c4; }
+.dp-note.on strong { color: #f0d27a; }
+.dp-note.off { background: rgba(169,201,160,.08); border: 1px solid var(--border); color: var(--muted); }
+.dp-note.off strong { color: var(--text); }
+
+/* Events: 50% downpayment per delivery phase */
+.phase-dp-toggle { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); cursor: pointer; }
+.phase-dp-toggle strong { display: block; font-size: 13px; }
+.phase-dp-toggle small { display: block; font-size: 11.5px; color: var(--muted); }
+.phase-dp-preview { margin: 6px 0 0; font-size: 12px; color: #f0d27a; }
+.phase-dp-preview strong { color: #f0d27a; }
+.phase-price { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.phase-dp { font-size: 11px; font-weight: 700; color: #f0d27a; background: rgba(224,194,106,.14); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.phase-btn.active .phase-dp { color: #5a4300; background: rgba(255,255,255,.45); }
+
+/* Pricelists: item whose price follows a Diamonds item */
+.pl-linked { display: block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--muted); }
+
+/* Themed dropdown used everywhere instead of the system picker (components/ThemedSelect.tsx) */
+.tsel { position: relative; min-width: 0; }
+.tsel-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+  background: #1e2b1e; border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 13.5px; font-weight: 600;
+  cursor: pointer; text-align: left; font-family: inherit; line-height: 1.3; }
+.tsel-btn:hover:not(:disabled), .tsel.open .tsel-btn { border-color: var(--accent); }
+.tsel-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tsel:not(.has-value) .tsel-label { color: var(--muted); }
+.tsel.disabled .tsel-btn { opacity: .55; cursor: default; }
+.tsel-sm .tsel-btn { padding: 7px 10px; font-size: 12.5px; border-radius: 9px; }
+.tsel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsel-chev { flex-shrink: 0; color: var(--muted); transition: transform .18s; }
+.tsel.open .tsel-chev { transform: rotate(180deg); }
+.tsel-spaced { margin-top: 8px; }
+.tsel-list { z-index: 1000; margin: 0; padding: 6px; list-style: none; background: #141c14; border: 1px solid #2c3b28; border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.55); overflow-y: auto; overscroll-behavior: contain; text-align: left; }
+.tsel-opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  color: #e8efe8; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.tsel-opt.focused { background: rgba(169,201,160,.1); }
+.tsel-opt.selected { color: var(--accent); }
+.tsel-opt.disabled { opacity: .45; cursor: default; }
+.tsel-opt svg { flex-shrink: 0; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .tsel-chev { transition: none; } }
+
+/* Order page "Others — N more categories": dashed box that turns solid green once a category is picked */
+.others-tsel { grid-column: 1 / -1; }
+.others-tsel .tsel-btn { border-style: dashed; color: var(--muted); }
+.others-tsel.has-value .tsel-btn { border-style: solid; border-color: var(--accent); background: var(--accent); }
+.others-tsel.has-value .tsel-label, .others-tsel.has-value .tsel-chev { color: #0a0f0a; font-weight: 800; }
+
+/* Admin Orders: filters + per-order status */
+.orders-toolbar .orders-filter-sel { width: auto; min-width: 160px; }
+.orders-status-sel { display: inline-block; width: 150px; vertical-align: middle; margin-right: 6px; }
+@media (max-width: 900px) { .orders-toolbar .orders-filter-sel { flex: 1 1 140px; min-width: 0; } }
+@media (max-width: 760px) { .orders-table .oc-actions .orders-status-sel { flex: 1; width: auto; margin-right: 0; } }
+
+/* Home: "Your recent orders" row (logged-in customers) */
+.recent-section { padding-bottom: 8px; }
+.recent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recent-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; }
+.recent-ico { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(169,201,160,.15); color: var(--accent); }
+.recent-all { color: var(--accent); font-weight: 700; font-size: 13.5px; white-space: nowrap; }
+.recent-all:hover { text-decoration: underline; }
+.recent-row { display: grid; grid-auto-flow: column; grid-auto-columns: 220px; gap: 14px; overflow-x: auto; padding: 4px 2px 14px;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.recent-card { scroll-snap-align: start; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);
+  border-radius: 18px; overflow: hidden; transition: border-color .15s, transform .15s; position: relative; }
+.recent-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.recent-art { position: relative; aspect-ratio: 16 / 10; background: #1b261b; overflow: hidden; }
+.recent-art > img:first-child { width: 100%; height: 100%; object-fit: cover; display: block; }
+.recent-item-icon { position: absolute; right: 10px; bottom: 10px; width: 40px; height: 40px; object-fit: contain;
+  background: rgba(10,15,10,.75); border-radius: 10px; padding: 4px; }
+.recent-body { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px 14px; }
+.recent-item { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-game { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 13px; }
+.recent-meta b { color: #e0c26a; }
+.recent-when { font-size: 11.5px; color: var(--muted); }
+.recent-cta { margin-top: 8px; font-size: 12.5px; font-weight: 800; color: var(--accent); }
+@media (max-width: 600px) {
+  .recent-row { grid-auto-columns: 46%; gap: 10px; }
+  .recent-body { padding: 10px 12px 12px; }
+  .recent-item { font-size: 13.5px; }
+  .recent-all { font-size: 12.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .recent-card { transition: none; } .recent-card:hover { transform: none; } }
+
+/* Scrollbars in the site's dark green theme (page, lists, tables, dropdowns, the recent-orders row) */
+html { scrollbar-color: #3b5236 #0d140d; }            /* Firefox: thumb, track */
+* { scrollbar-width: thin; scrollbar-color: #3b5236 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+html::-webkit-scrollbar-track { background: #0d140d; }
+::-webkit-scrollbar-thumb { background: #3b5236; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* "Browse Games →" (components/BrowseGamesButton.tsx): smooth scroll, then the cards fade up one after another */
+#games { scroll-margin-top: 12px; }
+#games.games-reveal .game-card { animation: games-in .5s cubic-bezier(.2,.7,.2,1) both; }
+#games.games-reveal .game-card:nth-child(2) { animation-delay: .05s; }
+#games.games-reveal .game-card:nth-child(3) { animation-delay: .1s; }
+#games.games-reveal .game-card:nth-child(4) { animation-delay: .15s; }
+#games.games-reveal .game-card:nth-child(5) { animation-delay: .2s; }
+#games.games-reveal .game-card:nth-child(6) { animation-delay: .25s; }
+#games.games-reveal .game-card:nth-child(7) { animation-delay: .3s; }
+#games.games-reveal .game-card:nth-child(n+8) { animation-delay: .35s; }
+@keyframes games-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #games.games-reveal .game-card { animation: none; } }

@@ -3,7 +3,7 @@ import type { OrderStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { manilaStartOfDay, toManilaDateString } from '@/lib/manilaDate';
 import { statusBadgeClass, statusLabel } from '@/lib/orderStatus';
-import { availabilityState, hasAvailabilityControl } from '@/lib/categoryAvailability';
+import { availabilityState, isPreOrderCategory } from '@/lib/categoryAvailability';
 import SalesChart, { type SalesPoint } from './SalesChart';
 
 export const revalidate = 0;
@@ -133,7 +133,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     }),
     prisma.pricelistItem.count({ where: { status: 'sold_out' } }),
     prisma.category.findMany({
-      where: { name: { contains: 'order', mode: 'insensitive' } },
+      where: { OR: [{ name: { contains: 'order', mode: 'insensitive' } }, { isActive: false }, { availableFrom: { not: null } }, { availableUntil: { not: null } }] },
       select: { id: true, name: true, isActive: true, availableFrom: true, availableUntil: true, game: { select: { name: true } } },
     }),
     prisma.event.findMany({
@@ -152,7 +152,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   const inProgressCount = live.in_progress ?? 0;
   const giftingWaiting = (live.reserved ?? 0) + (live.friends ?? 0);
   const oldest = oldestPending[0];
-  const preorders = preorderCats.filter((c) => hasAvailabilityControl(c.name));
+  // Pre-order categories, plus any category that's switched off or scheduled
+  const preorders = preorderCats.filter((c) => isPreOrderCategory(c.name) || !c.isActive || c.availableFrom || c.availableUntil);
 
   // ---------- Selected range ----------
   const valid = rangeOrders.filter((o) => !NOT_SALES.includes(o.status));
