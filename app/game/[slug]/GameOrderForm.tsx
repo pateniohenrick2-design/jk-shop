@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useCustomer } from '@/lib/useCustomer';
 import PaymentLogo from '@/components/PaymentLogo';
 import { normalizeLabel, savedAccountName, type SavedAccount } from '@/lib/savedAccounts';
+import { itemIcon, isWideIcon } from '@/lib/itemIcons';
 import { isSoldOut } from '@/lib/manilaDate';
 
 type Item = { id: string; name: string; price: number; status: string };
@@ -444,17 +445,23 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
             <>
             {/* Collapsed: first 10 rows only (CSS hides the rest — 2 per row, 1 per row on tiny phones) */}
             <div className={`item-grid ${itemsExpanded ? '' : 'collapsed'}`}>
-              {category.items.map((it) => (
+              {category.items.map((it) => {
+                const icon = itemIcon(game.slug, it.name);
+                return (
                 <button
                   key={it.id}
                   disabled={it.status === 'sold_out'}
                   className={`item-btn ${itemId === it.id ? 'active' : ''} ${it.status === 'sold_out' ? 'sold' : ''}`}
                   onClick={() => setItemId(it.id)}
                 >
-                  <span>{it.name}</span>
+                  <span className="item-label">
+                    {icon && <img className={`item-icon ${isWideIcon(icon) ? 'wide' : ''}`} src={icon} alt="" width={32} height={32} loading="lazy" decoding="async" />}
+                    <span>{it.name}</span>
+                  </span>
                   <span>{it.status === 'sold_out' ? 'SOLD OUT' : `₱${it.price}`}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
             {category.items.length > 10 && (
               <button

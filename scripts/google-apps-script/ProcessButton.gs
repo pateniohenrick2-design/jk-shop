@@ -180,6 +180,11 @@ function markProcessing(sheetName, row, siteName) {
     const cell = sheet.getRange(row, sup + 1);
     if (!cell.getDisplayValue()) cell.setValue(siteName);
   }
+  // Tell the website too (SheetSync file). Script edits don't fire the edit trigger.
+  if (typeof syncStatusFor_ === 'function') {
+    SpreadsheetApp.flush();
+    syncStatusFor_(sheet, row);
+  }
 }
 
 function esc(s) {

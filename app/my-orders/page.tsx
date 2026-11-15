@@ -61,15 +61,26 @@ function MyOrders() {
   const load = useCallback(async () => {
     setRefreshing(true);
     setError(null);
+    const request = (token?: string) =>
+      fetch('/api/my-orders', { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
     try {
       const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      const res = await fetch('/api/my-orders', { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
+      let res = await request(data.session?.access_token);
+      // Phones often wake a tab with an expired login token: refresh it once and retry
+      if (res.status === 401) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed.session) res = await request(refreshed.session.access_token);
+      }
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || 'Could not load your orders.');
+      if (!res.ok) throw new Error(body.error || `Could not load your orders (error ${res.status}). Please tap Refresh.`);
+      if (!Array.isArray(body.orders)) throw new Error('Could not load your orders (unexpected reply). Please tap Refresh.');
       setOrders(body.orders);
     } catch (e: any) {
-      setError(e.message || 'Could not load your orders.');
+      // Network failures ("Failed to fetch" / "Load failed") get a clearer message
+      const msg = e?.message && !/failed to fetch|load failed|network/i.test(e.message)
+        ? e.message
+        : 'Could not reach the server. Check your internet connection, then tap Refresh.';
+      setError(msg);
     } finally {
       setRefreshing(false);
     }
