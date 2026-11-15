@@ -316,6 +316,7 @@ export default function EventsClient({
       </div>
 
       <div className="panel">
+        <div className="table-scroll">
         <table className="admin-table">
           <thead>
             <tr>
@@ -404,6 +405,7 @@ export default function EventsClient({
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {formOpen && (

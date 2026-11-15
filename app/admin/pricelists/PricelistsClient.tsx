@@ -697,9 +697,7 @@ export default function PricelistsClient({
           </SortableContext>
         </DndContext>
 
-        <div
-          style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}
-        >
+        <div className="pl-layout">
           {/* Category list — no reordering */}
           <div>
             <div

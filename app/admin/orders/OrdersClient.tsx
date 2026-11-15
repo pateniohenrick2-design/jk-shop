@@ -264,7 +264,7 @@ export default function OrdersClient({
           <button className="qty-btn orders-bulk-btn" onClick={exportCSV} title="Downloads every order matching the search and filters">Export CSV ({total})</button>
         </div>
 
-        <table className="admin-table">
+        <table className="admin-table orders-table">
           <thead>
             <tr>
               <th><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleSelectAll} /></th>
@@ -290,21 +290,21 @@ export default function OrdersClient({
               const options = gifting ? GIFTING_OPTIONS : GENERAL_OPTIONS;
               return (
                 <>
-                  <tr key={o.id}>
-                    <td><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleSelected(o.id)} /></td>
-                    <td>{(o.orderCode ?? shortId(o.id))}</td>
-                    <td>{o.gameName}</td>
-                    <td>{o.itemName ?? o.eventName ?? o.categoryName}</td>
-                    <td>{primaryField}</td>
-                    <td>₱{o.totalPrice}</td>
-                    <td>
+                  <tr key={o.id} className="orders-row">
+                    <td className="oc-check"><input type="checkbox" aria-label={`Select ${o.orderCode ?? o.id}`} checked={selected.has(o.id)} onChange={() => toggleSelected(o.id)} /></td>
+                    <td className="oc-code" data-label="Order">{(o.orderCode ?? shortId(o.id))}</td>
+                    <td className="oc-game" data-label="Game">{o.gameName}</td>
+                    <td className="oc-item" data-label="Item">{o.itemName ?? o.eventName ?? o.categoryName}</td>
+                    <td className="oc-cust" data-label="Customer">{primaryField}</td>
+                    <td className="oc-amount" data-label="Amount">₱{o.totalPrice}</td>
+                    <td className="oc-status" data-label="Status">
                       <span className={statusBadgeClass(o.status)}>
                         {statusLabel(o.status, gifting)}
                       </span>
                       {hasRush && <span className="badge badge-rush">RUSH</span>}
                     </td>
-                    <td>{new Date(o.createdAt).toLocaleDateString()}</td>
-                    <td>
+                    <td className="oc-date" data-label="Date">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    <td className="oc-actions">
                       <select
                         className="others-sel orders-status-sel"
                         value={o.status}
@@ -322,7 +322,7 @@ export default function OrdersClient({
                     </td>
                   </tr>
                   {isExpanded && (
-                    <tr key={`${o.id}-expand`}>
+                    <tr key={`${o.id}-expand`} className="orders-expand-row">
                       <td colSpan={9}>
                         <div className="order-expand">
                           <div className="order-expand-col">
