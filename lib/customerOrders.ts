@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import type { OrderStatusValue } from '@/lib/orderStatus';
+import { splitImages } from '@/lib/reviews';
+import { viewableImage } from '@/lib/reviewsServer';
 
 // What a customer is allowed to see about their own order: details + status
 // (status is synced from the Google Sheet). No proof links, internal notes or admin data.
@@ -16,6 +18,8 @@ export type CustomerOrder = {
   totalPrice: number;
   paymentMethod: string;
   account: { label: string; value: string }[];
+  // The customer's own review of this order (null = not reviewed yet)
+  review: { rating: number; comment: string | null; imageUrls: string[]; images: string[]; hidden: boolean; adminReply: string | null } | null;
 };
 
 export const customerOrderInclude = {
@@ -24,6 +28,7 @@ export const customerOrderInclude = {
   item: { select: { name: true } },
   event: { select: { name: true } },
   paymentMethod: { select: { name: true } },
+  review: { select: { rating: true, comment: true, imageUrls: true, hidden: true, adminReply: true } },
 } satisfies Prisma.OrderInclude;
 
 type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof customerOrderInclude }>;
@@ -44,6 +49,16 @@ export function toCustomerOrder(o: OrderWithRelations): CustomerOrder {
     account: o.category.fields
       .map((f) => ({ label: f.label.replace(/^Enter\s+/i, ''), value: String(raw[f.id] ?? '') }))
       .filter((f) => f.value),
+    review: o.review
+      ? {
+          rating: o.review.rating,
+          comment: o.review.comment,
+          imageUrls: splitImages(o.review.imageUrls), // raw (sent back when editing)
+          images: splitImages(o.review.imageUrls).map(viewableImage), // for <img>
+          hidden: o.review.hidden,
+          adminReply: o.review.adminReply,
+        }
+      : null,
   };
 }
 

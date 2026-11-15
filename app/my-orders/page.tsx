@@ -9,14 +9,17 @@ import { useCustomer } from '@/lib/useCustomer';
 import type { CustomerOrder } from '@/lib/customerOrders';
 import { screenshotHref } from '@/lib/accountValue';
 import { customerStatusLabel, isGiftingCategory, statusBadgeClass } from '@/lib/orderStatus';
+import ReviewModal, { Stars } from '@/components/ReviewModal';
+import { canReview } from '@/lib/reviews';
 
 const peso = (n: number) => `₱${n.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 // Order details + status (updated by the shop from the Google Sheet or the admin).
-function OrderCard({ o }: { o: CustomerOrder }) {
+function OrderCard({ o, onReviewed }: { o: CustomerOrder; onReviewed?: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   return (
     <article className="to-card">
       <div className="to-card-top">
@@ -53,6 +56,35 @@ function OrderCard({ o }: { o: CustomerOrder }) {
         <span>Paid via {o.paymentMethod}</span>
         <strong>{peso(o.totalPrice)}</strong>
       </div>
+
+      {/* Review: only for completed orders, and only on the logged-in My Orders list */}
+      {onReviewed && canReview(o.status) && (
+        o.review ? (
+          <div className="to-review">
+            <div className="to-review-top">
+              <Stars value={o.review.rating} />
+              <span className="to-review-label">{o.review.hidden ? 'Your review (hidden by the shop)' : 'Your review'}</span>
+              <button type="button" className="to-review-edit" onClick={() => setReviewOpen(true)}>Edit</button>
+            </div>
+            {o.review.comment && <p className="to-review-text">{o.review.comment}</p>}
+            {o.review.images.length > 0 && (
+              <div className="to-review-imgs">{o.review.images.map((src) => <img key={src} src={src} alt="" />)}</div>
+            )}
+            {o.review.adminReply && <p className="to-review-reply"><strong>JK Shop:</strong> {o.review.adminReply}</p>}
+          </div>
+        ) : (
+          <button type="button" className="to-review-btn" onClick={() => setReviewOpen(true)}>⭐ Leave a review</button>
+        )
+      )}
+      {reviewOpen && (
+        <ReviewModal
+          orderCode={o.orderCode}
+          itemName={o.item}
+          existing={o.review}
+          onClose={() => setReviewOpen(false)}
+          onSaved={() => { setReviewOpen(false); onReviewed?.(); }}
+        />
+      )}
     </article>
   );
 }
@@ -164,7 +196,7 @@ function MyOrders() {
           {shown.length === 0 ? (
             <div className="to-empty">No orders match “{query}”.</div>
           ) : (
-            <div className="to-list">{shown.map((o) => <OrderCard key={o.orderCode} o={o} />)}</div>
+            <div className="to-list">{shown.map((o) => <OrderCard key={o.orderCode} o={o} onReviewed={load} />)}</div>
           )}
           {meta.pages > 1 && (
             <nav className="orders-pager" aria-label="Order pages">

@@ -50,6 +50,7 @@ export default function Footer() {
             <h4>Shop</h4>
             <Link href="/">All Games</Link>
             <Link href="/my-orders">My Orders</Link>
+            <Link href="/reviews">Reviews</Link>
             {/* plain <a>: on the home page it just changes the #hash, which opens the guide */}
             <a href="/#how-to-order">How to Order</a>
           </div>

@@ -73,7 +73,7 @@ function CheckIcon() {
   );
 }
 
-export default function GameOrderForm({ game, paymentMethods }: { game: Game; paymentMethods: PaymentMethod[] }) {
+export default function GameOrderForm({ game, paymentMethods, rating }: { game: Game; paymentMethods: PaymentMethod[]; rating?: { average: number; count: number } | null }) {
   const mainCats = game.categories.filter((c) => c.group === 'main');
   const otherCats = game.categories.filter((c) => c.group === 'others');
 
@@ -491,6 +491,12 @@ export default function GameOrderForm({ game, paymentMethods }: { game: Game; pa
           <img src={`/games/${game.slug}.png`} alt={game.name} />
           <div>
             <h1>{game.name}</h1>
+            {rating && (
+              <a href="#reviews" className="game-rating" aria-label={`Rated ${rating.average} out of 5 from ${rating.count} reviews`}>
+                <span className="game-rating-star" aria-hidden>★</span> {rating.average.toFixed(1)}
+                <span className="game-rating-n">· {rating.count.toLocaleString('en-PH')} review{rating.count === 1 ? '' : 's'}</span>
+              </a>
+            )}
             {game.description && <p>{game.description}</p>}
           </div>
         </div>

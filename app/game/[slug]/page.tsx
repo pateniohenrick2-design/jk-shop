@@ -5,6 +5,8 @@ import Footer from '@/components/Footer';
 import { isCategoryOpen } from '@/lib/categoryAvailability';
 import { linkedDiamondName } from '@/lib/linkedPrices.shared';
 import GameOrderForm from './GameOrderForm';
+import ReviewsSection from '@/components/ReviewsSection';
+import { reviewSummary } from '@/lib/reviewsServer';
 
 export const revalidate = 60;
 
@@ -96,6 +98,8 @@ export default async function GamePage({ params }: { params: { slug: string } })
     })),
   };
 
+  const rating = await reviewSummary(game.id).catch(() => ({ average: 0, count: 0 }));
+
   const serializedPayments = paymentMethods.map((p) => ({
     id: p.id,
     name: p.name,
@@ -108,7 +112,10 @@ export default async function GamePage({ params }: { params: { slug: string } })
   return (
     <>
       <Header />
-      <GameOrderForm game={serializedGame} paymentMethods={serializedPayments} />
+      <GameOrderForm game={serializedGame} paymentMethods={serializedPayments} rating={rating.count ? { average: rating.average, count: rating.count } : null} />
+      <div className="order-wrap rv-wrap" id="reviews">
+        <ReviewsSection gameSlug={game.slug} />
+      </div>
       <Footer />
     </>
   );

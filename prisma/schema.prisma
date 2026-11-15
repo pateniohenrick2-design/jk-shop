@@ -54,6 +54,7 @@ model Game {
   isActive    Boolean    @default(true)
   categories  Category[]
   orders      Order[]
+  reviews     Review[]
   createdAt   DateTime   @default(now())
 }
 
@@ -184,6 +185,7 @@ model Order {
   updatedAt       DateTime      @updatedAt
   statusHistory   OrderStatusHistory[]
   internalNotes   OrderNote[]
+  review          Review?
 
   @@index([orderCode])
   @@index([customerId])
@@ -226,4 +228,27 @@ model StoreSettings {
   contactLabel  String?  // footer button text
   replyTime     String?  // footer reply-time note
   updatedAt     DateTime @updatedAt
+}
+
+// Customer review: one per completed order (written from My Orders). Live immediately; admin can hide or reply.
+model Review {
+  id          String   @id @default(cuid())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String   @unique
+  game        Game     @relation(fields: [gameId], references: [id])
+  gameId      String
+  customerId  String   // Supabase Auth user id of the reviewer
+  displayName String   // shown publicly, e.g. "Henrick P."
+  itemName    String   // what was bought, e.g. "56 Diamonds" (shown as "Verified order")
+  rating      Int      // 1–5
+  comment     String?
+  imageUrls   String?  // up to 3 image URLs, one per line
+  hidden      Boolean  @default(false) // hidden by the admin
+  adminReply  String?
+  repliedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([gameId, hidden, createdAt])
+  @@index([customerId])
 }
