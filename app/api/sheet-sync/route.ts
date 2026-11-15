@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
   const changes: Change[] = Array.isArray(body.changes) ? body.changes.slice(0, 200) : [body];
   const results: { orderCode: string; result: string }[] = [];
 
+  try {
   for (const c of changes) {
     const orderCode = String(c.orderCode ?? '').trim();
     if (!orderCode) continue;
@@ -54,6 +55,12 @@ export async function POST(req: NextRequest) {
       prisma.orderStatusHistory.create({ data: { orderId: order.id, oldStatus: order.status, newStatus: status } }),
     ]);
     results.push({ orderCode, result: `${order.status} → ${status}` });
+  }
+
+  } catch (err) {
+    // Shows in Vercel → Logs, and the reason goes back to the Apps Script log
+    console.error('[sheet-sync] failed', err);
+    return NextResponse.json({ ok: false, error: String((err as Error)?.message ?? err).slice(0, 500), results }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, results });
